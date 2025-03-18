@@ -1,190 +1,155 @@
 /**
- * Dynamic game launcher that can switch between debugDraw and Angry Tirds mode
+ * Main entry point for the Angry Tirds game
  */
-import { startAngryTirds } from './angryTirds.js';
+import { setupPhysics } from './physics.js';
+import { EntityManager } from './entities.js';
+import { GameController } from './gameController.js';
+import { createLevel } from './levels.js';
+import GameRenderer from './gameRenderer.js';
 
-// Get URL parameters to determine which mode to run
-const params = new URLSearchParams(window.location.search);
-const gameMode = params.get('game') || 'angrytirds'; // Default to Angry Tirds mode
-
-export function start(Box2DFactory) {
-  // Launch different game modes based on URL parameter
-  if (gameMode.toLowerCase() === 'debug') {
-    // Original debug visualization mode
-    startDebugMode(Box2DFactory);
-  } else {
-    // Angry Tirds game mode
-    startAngryTirds(Box2DFactory);
-  }
-}
-
-// Original debug pyramid demo
-function startDebugMode(Box2DFactory) {
+function start(Box2DFactory) {
   Box2DFactory().then((box2d) => {
+    // Get canvas and setup context
     const canvas = document.getElementById("gameCanvas");
-    console.log('game setting canvas size', canvas.width, canvas.height);
     const ctx = canvas.getContext("2d");
-
-    const pyramidHeight = 10;
-    const pixelsPerMeter = canvas.height / 72;
-    console.log('pixelsPerMeter', pixelsPerMeter);
-    const subStepCount = 4;
-
-    const hdRendering = false;
-
-    const {
-      b2DefaultWorldDef,
-      b2CreateWorld,
-      b2CreateBody,
-      b2CreatePolygonShape,
-      b2CreateSegmentShape,
-      b2World_Step,
-      b2MakeBox,
-      b2DefaultBodyDef,
-      b2DefaultShapeDef,
-      b2BodyType,
-      b2Segment,
-      b2Vec2,
-      b2Rot,
-      TaskSystem,
-      b2CreateThreadedWorld,
-      b2World_GetProfile,
-    } = box2d;
-
-    const worldDef = b2DefaultWorldDef();
-    worldDef.gravity.Set(0, -10);
-
-    let worldId, taskSystem;
-
-    const statsLevel = 1;
-
-    if(navigator.hardwareConcurrency > 1) {
-      taskSystem = new TaskSystem(navigator.hardwareConcurrency);
-      worldId = b2CreateThreadedWorld(worldDef, taskSystem);
-    } else {
-      worldId = b2CreateWorld(worldDef);
-    }
-
-    const bd_ground = new b2DefaultBodyDef();
-    const groundId = b2CreateBody(worldId, bd_ground);
-
-    const shapeDefSegment = new b2DefaultShapeDef();
-    shapeDefSegment.density = 1.0;
-    shapeDefSegment.friction = 0.3;
-
-    {
-      const segment = new b2Segment();
-      segment.point1 = new b2Vec2(3, -4);
-      segment.point2 = new b2Vec2(6, -7);
-
-      b2CreateSegmentShape(groundId, shapeDefSegment, segment);
-    }
-
-    {
-      const segment = new b2Segment();
-      segment.point1 = new b2Vec2(3, -18);
-      segment.point2 = new b2Vec2(22, -18)
-      b2CreateSegmentShape(groundId, shapeDefSegment, segment);
-    }
-
-    {
-      const segment = new b2Segment();
-      segment.point1 = new b2Vec2(-100, -40);
-      segment.point2 = new b2Vec2(100, -40)
-      b2CreateSegmentShape(groundId, shapeDefSegment, segment);
-    }
-
-    const rot = new b2Rot();
-    rot.SetAngle(0);
-
-    function createPyramid(worldId, height, gap) {
-      const boxWidth = 2;
-      const boxHeight = 2;
-
-      for (let row = 0; row < height; row++) {
-          const boxesInRow = height - row;
-
-          const startX = -(boxesInRow - 1) * (boxWidth + gap) / 2;
-
-          for (let i = 0; i < boxesInRow; i++) {
-              const bd = new b2DefaultBodyDef();
-              bd.type = b2BodyType.b2_dynamicBody;
-
-              const xPos = startX + i * (boxWidth + gap);
-              const yPos = (boxHeight + gap) * row + boxHeight;
-              bd.position = new b2Vec2().Set(xPos, yPos);
-
-              const bodyId = b2CreateBody(worldId, bd);
-
-              const shapeDefDynamic = new b2DefaultShapeDef();
-              shapeDefDynamic.density = 1.0;
-              shapeDefDynamic.friction = 0.3;
-
-              const box = b2MakeBox(boxWidth/2, boxHeight/2);
-              b2CreatePolygonShape(bodyId, shapeDefDynamic, box);
-          }
-      }
-    }
-
-    const boxGap = 0.1;
-    createPyramid(worldId, pyramidHeight, boxGap);
-
-    function drawProfile(stepDuration, profile) {
-      const hdScale = hdRendering ? (Math.min(window.devicePixelRatio || 1, 2) || 1) : 1;
-      ctx.font = `${32 * hdScale}px Arial`;
-      ctx.fillStyle = "white";
-      if (statsLevel < 1) return;
-      ctx.fillText(`threading: ${taskSystem ? 'on' : 'off'}`, 160 * hdScale, 20 * hdScale);
-      ctx.fillText(`cpus: ${navigator.hardwareConcurrency}  screen: ${canvas.width}x${canvas.height}`, 450 * hdScale, 20 * hdScale);
-      if (statsLevel < 2) return;
-      ctx.fillText(`step: ${profile.step.toFixed(2)}ms`, 10 * hdScale, 40 * hdScale);
-      ctx.fillText(`pairs: ${profile.pairs.toFixed(2)}ms`, 10 * hdScale, 60 * hdScale);
-      ctx.fillText(`collide: ${profile.collide.toFixed(2)}ms`, 10 * hdScale, 80 * hdScale);
-      ctx.fillText(`solve: ${profile.solve.toFixed(2)}ms`, 10 * hdScale, 100 * hdScale);
-      ctx.fillText(`buildIslands: ${profile.buildIslands.toFixed(2)}ms`, 10 * hdScale, 120 * hdScale);
-      ctx.fillText(`solveConstraints: ${profile.solveConstraints.toFixed(2)}ms`, 10 * hdScale, 140 * hdScale);
-      ctx.fillText(`prepareTasks: ${profile.prepareTasks.toFixed(2)}ms`, 10 * hdScale, 160 * hdScale);
-      ctx.fillText(`solverTasks: ${profile.solverTasks.toFixed(2)}ms`, 10 * hdScale, 180 * hdScale);
-      ctx.fillText(`prepareConstraints: ${profile.prepareConstraints.toFixed(2)}ms`, 10 * hdScale, 200 * hdScale);
-      ctx.fillText(`integrateVelocities: ${profile.integrateVelocities.toFixed(2)}ms`, 10 * hdScale, 220 * hdScale);
-      ctx.fillText(`warmStart: ${profile.warmStart.toFixed(2)}ms`, 10 * hdScale, 240 * hdScale);
-      ctx.fillText(`solveVelocities: ${profile.solveVelocities.toFixed(2)}ms`, 10 * hdScale, 260 * hdScale);
-      ctx.fillText(`integratePositions: ${profile.integratePositions.toFixed(2)}ms`, 10 * hdScale, 280 * hdScale);
-      ctx.fillText(`relaxVelocities: ${profile.relaxVelocities.toFixed(2)}ms`, 10 * hdScale, 300 * hdScale);
-      ctx.fillText(`applyRestitution: ${profile.applyRestitution.toFixed(2)}ms`, 10 * hdScale, 320 * hdScale);
-      ctx.fillText(`storeImpulses: ${profile.storeImpulses.toFixed(2)}ms`, 10 * hdScale, 340 * hdScale);
-      ctx.fillText(`finalizeBodies: ${profile.finalizeBodies.toFixed(2)}ms`, 10 * hdScale, 360 * hdScale);
-      ctx.fillText(`sleepIslands: ${profile.sleepIslands.toFixed(2)}ms`, 10 * hdScale, 380 * hdScale);
-      ctx.fillText(`splitIslands: ${profile.splitIslands.toFixed(2)}ms`, 10 * hdScale, 400 * hdScale);
-      ctx.fillText(`hitEvents: ${profile.hitEvents.toFixed(2)}ms`, 10 * hdScale, 420 * hdScale);
-      ctx.fillText(`broadphase: ${profile.broadphase.toFixed(2)}ms`, 10 * hdScale, 440 * hdScale);
-      ctx.fillText(`continuous: ${profile.continuous.toFixed(2)}ms`, 10 * hdScale, 460 * hdScale);
-    }
-
-    let handle;
-    let canRun = false;
-    function loop(prevMs) {
-      const nowMs = window.performance.now();
-      handle = requestAnimationFrame(loop.bind(null, nowMs));
-      const deltaMs = nowMs-prevMs;
-      const start = performance.now();
-      if (canRun) {
-        b2World_Step(worldId, deltaMs / 1000, subStepCount);
-      }
-      const end = performance.now();
-      taskSystem?.ClearTasks();
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // debugDraw.Draw(worldId);
-      const duration = end - start;
-      const profile = b2World_GetProfile(worldId);
-      drawProfile(duration, profile);
+    
+    // Set physics scale based on canvas dimensions
+    const physicsHeight = 30; // World is 30 meters high
+    const pixelsPerMeter = canvas.height / physicsHeight;
+    
+    // Calculate world dimensions based on aspect ratio
+    const aspectRatio = canvas.width / canvas.height;
+    const physicsWidth = physicsHeight * aspectRatio;
+    const worldLeft = -physicsWidth / 2;
+    const worldRight = physicsWidth / 2;
+    const worldBottom = -physicsHeight / 2;
+    const worldTop = physicsHeight / 2;
+    
+    // Put ground exactly at the bottom of the canvas
+    const groundY = worldBottom;
+    
+    // World dimensions for consistent reference
+    const worldDimensions = { 
+      width: physicsWidth, 
+      height: physicsHeight,
+      left: worldLeft,
+      right: worldRight,
+      top: worldTop,
+      bottom: worldBottom,
+      groundY: groundY
     };
     
-    setTimeout(() => {
-      canRun = true;
-    }, 200);
-
-    loop(window.performance.now());
+    // Initialize physics
+    const physics = setupPhysics(box2d);
+    const { worldId, taskSystem } = physics.setupWorld();
+    
+    // Initialize renderer
+    const renderer = new GameRenderer(box2d, ctx, pixelsPerMeter, false);
+    
+    // Initialize entity manager
+    const entityManager = new EntityManager(physics, worldId, renderer, worldDimensions);
+    
+    // Initialize game controller
+    const gameController = new GameController(physics, entityManager, renderer, worldDimensions);
+    
+    // Create level
+    const levelConfig = createLevel(entityManager, worldDimensions);
+    
+    // Update game state with level configuration
+    gameController.state.slingPosition = levelConfig.slingshotPosition;
+    gameController.state.birdPosition = levelConfig.initialBirdPosition;
+    
+    // Prepare first bird
+    gameController.prepareBird();
+    
+    // Game loop
+    let lastTimestamp = 0;
+    function gameLoop(timestamp) {
+      // Calculate time delta
+      const deltaTime = lastTimestamp ? (timestamp - lastTimestamp) / 1000 : 0.016;
+      lastTimestamp = timestamp;
+      
+      // Handle input
+      gameController.handleInput();
+      
+      // Step physics
+      physics.stepWorld(worldId, deltaTime);
+      
+      // Clean up task system
+      if (taskSystem) {
+        taskSystem.ClearTasks();
+      }
+      
+      // Update game objects
+      updateGameObjects();
+      
+      // Clean up physics objects
+      gameController.cleanupBodies();
+      
+      // Render
+      renderer.Draw(worldId, gameController.state);
+      
+      // Loop
+      requestAnimationFrame(gameLoop);
+    }
+    
+    // Update game objects from physics bodies
+    function updateGameObjects() {
+      const { b2Body_GetPosition, b2Body_GetAngle } = physics;
+      const trackedBodies = entityManager.trackedBodies;
+      
+      // Update active entities
+      for (const [uniqueId, birdInfo] of trackedBodies.birds.entries()) {
+        if (!birdInfo.active) continue;
+        updateEntityPosition(uniqueId, birdInfo);
+      }
+      
+      for (const [uniqueId, pigInfo] of trackedBodies.pigs.entries()) {
+        updateEntityPosition(uniqueId, pigInfo);
+      }
+      
+      for (const [uniqueId, blockInfo] of trackedBodies.blocks.entries()) {
+        if (!blockInfo.active) continue;
+        updateEntityPosition(uniqueId, blockInfo);
+      }
+      
+      // Helper to update entity positions
+      function updateEntityPosition(uniqueId, info) {
+        try {
+          if (!info || !info.entityId) return;
+          
+          const entity = entityManager.getEntity(info.entityId);
+          if (!entity || !entity.bodyId) return;
+          
+          const bodyId = entity.bodyId;
+          const pos = b2Body_GetPosition(bodyId);
+          let angle = 0;
+          
+          try {
+            angle = b2Body_GetAngle(bodyId);
+          } catch (e) {
+            // Fallback if GetAngle fails
+            if (physics.b2Body_GetRotation) {
+              const rotation = physics.b2Body_GetRotation(bodyId);
+              if (rotation) {
+                angle = Math.atan2(rotation.s, rotation.c);
+              }
+            }
+          }
+          
+          // Create new position object to ensure change detection
+          const newPos = { x: pos.x, y: pos.y };
+          renderer.updateGameObject(uniqueId, newPos, angle);
+        } catch (e) {
+          console.error("Error updating entity position:", e);
+        }
+      }
+    }
+    
+    // Start the game loop
+    requestAnimationFrame(gameLoop);
   });
 }
+
+// Export the start function
+export { start };

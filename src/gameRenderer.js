@@ -149,17 +149,6 @@ export default class GameRenderer {
     // Make display radius a bit smaller than physics radius (which was increased for collision)
     const birdRadius = radius * 0.8; // Bird looks 80% of physics size
     
-    // Draw debug outline of the physics shape if in debug mode
-    if (gameState && gameState.debugMode) {
-      this.ctx.save();
-      this.ctx.translate(x, y);
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, radius * 1.5, 0, Math.PI * 2); // Show the actual collision radius
-      this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-      this.ctx.stroke();
-      this.ctx.restore();
-    }
-    
     this.ctx.save();
     this.ctx.translate(x, y);
     this.ctx.rotate(-angle);
@@ -268,16 +257,6 @@ export default class GameRenderer {
     const displayWidth = width;  // 100% of physics width
     const displayHeight = height; // 100% of physics height
     
-    // Draw debug outline of the physics shape if in debug mode
-    if (gameState && gameState.debugMode) {
-      this.ctx.save();
-      this.ctx.translate(x, y);
-      this.ctx.rotate(-angle);
-      this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-      this.ctx.strokeRect(-width/2, -height/2, width, height);
-      this.ctx.restore();
-    }
-    
     this.ctx.save();
     this.ctx.translate(x, y);
     this.ctx.rotate(-angle);
@@ -326,9 +305,6 @@ export default class GameRenderer {
         // Check for dead flag directly on the gameObject
         if (gameObject.dead === true) {
           isPigDead = true;
-          if (gameState && gameState.debugMode) {
-            console.log(`Drawing DEAD pig at (${x.toFixed(2)}, ${y.toFixed(2)}) with ID ${uniqueId}`);
-          }
         }
         
         // Also check activity status from trackedBodies as backup
@@ -336,9 +312,6 @@ export default class GameRenderer {
           const pigInfo = gameState.trackedBodies.pigs.get(uniqueId);
           if (pigInfo && pigInfo.active === false) {
             isPigDead = true;
-            if (gameState && gameState.debugMode) {
-              console.log(`Drawing inactive pig at (${x.toFixed(2)}, ${y.toFixed(2)}) with ID ${uniqueId}`);
-            }
             
             // If not already marked as dead, mark it now
             if (gameObject.dead !== true) {
@@ -349,17 +322,6 @@ export default class GameRenderer {
         
         break;
       }
-    }
-    
-    // Draw debug outline of the physics shape if in debug mode
-    if (gameState && gameState.debugMode) {
-      this.ctx.save();
-      this.ctx.translate(x, y);
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, radius, 0, Math.PI * 2); // Show actual physics radius
-      this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-      this.ctx.stroke();
-      this.ctx.restore();
     }
     
     this.ctx.save();
@@ -726,17 +688,6 @@ export default class GameRenderer {
         const position = gameObject.position || { x: 0, y: 0 };
         const angle = gameObject.angle || 0;
         
-        // Debug log every game object position to check for updates
-        if (gameStateObj && gameStateObj.initTime && (Date.now() - gameStateObj.initTime < 10000)) {
-          // During first 10 seconds, log all renderings to verify updates
-          if (gameObject.type === 'pig' || gameObject.type === 'wood') {
-            console.log(`RENDERING: ${gameObject.type} ${uniqueId.substring(0,4)} at position (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) with angle ${angle.toFixed(2)}`);
-          }
-        }
-        else if (gameStateObj && gameStateObj.debugMode) {
-          console.log(`Rendering ${gameObject.type} at position (${position.x}, ${position.y}) with angle ${angle}`);
-        }
-        
         // Render based on type
         switch (gameObject.type) {
           case 'bird':
@@ -771,24 +722,6 @@ export default class GameRenderer {
             }
             break;
         }
-        
-        // Draw object IDs in debug mode
-        if (gameStateObj && gameStateObj.debugMode) {
-          this.ctx.save();
-          this.ctx.font = '0.5px monospace';
-          this.ctx.textAlign = 'center';
-          this.ctx.textBaseline = 'middle';
-          this.ctx.fillStyle = '#FFFF00';
-          this.ctx.strokeStyle = '#000000';
-          this.ctx.lineWidth = 0.02;
-          
-          // Show a shorter version of the uniqueId
-          const shortId = uniqueId.substring(0, 4);
-          this.ctx.fillText(shortId, position.x, position.y);
-          this.ctx.strokeText(shortId, position.x, position.y);
-          
-          this.ctx.restore();
-        }
       }
       
       // If we have a current bird in aiming mode, render it at its current position
@@ -810,25 +743,13 @@ export default class GameRenderer {
         
         // Draw the current bird at the aiming position
         this.drawBird(birdPosition.x, birdPosition.y, birdRadius, 0, gameStateObj);
-        
-        if (gameStateObj.debugMode) {
-          console.log(`Rendering bird at aiming position: ${birdPosition.x}, ${birdPosition.y}`);
-        }
       }
       
       this.restoreCanvas();
       
-      // Debug statistics
-      if (gameStateObj && gameStateObj.debugMode) {
+      // Store basic statistics
+      if (gameStateObj) {
         gameStateObj.bodyShapesCount = this.gameObjects.size;
-        
-        // Only log when turning debug mode on to avoid console spam
-        if (!gameStateObj.debugWasActive) {
-          console.log("Registered objects:", [...this.gameObjects.entries()]);
-          gameStateObj.debugWasActive = true;
-        }
-      } else if (gameStateObj) {
-        gameStateObj.debugWasActive = false;
       }
     } catch (error) {
       console.error("Error in renderGameObjects:", error);
@@ -943,140 +864,6 @@ export default class GameRenderer {
     ctx.fillStyle = this.colors.ui.text;
     ctx.textAlign = 'right';
     ctx.fillText(`Birds: ${gameState.birdsRemaining || 0}`, canvas.width - 20, 38);
-    
-    // Debug information - only show when debug mode is enabled
-    if (gameState.debugMode) {
-      const debugPanelHeight = 300;
-      const debugPanelWidth = 400;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(10, 60, debugPanelWidth, debugPanelHeight);
-      
-      ctx.font = '16px monospace';
-      ctx.fillStyle = '#FFFFFF';
-      ctx.textAlign = 'left';
-      
-      let lineY = 85;
-      const lineHeight = 22;
-      
-      // Title
-      ctx.font = 'bold 18px monospace';
-      ctx.fillStyle = '#00FFFF';
-      ctx.fillText(`DEBUG INFORMATION - NO DEBUG DRAWING USED`, 20, lineY);
-      lineY += lineHeight;
-      
-      // Reset font
-      ctx.font = '16px monospace';
-      ctx.fillStyle = '#FFFFFF';
-      
-      // Current bird ID - only show uniqueId, NOT pointer
-      const birdUniqueId = gameState.currentBird && gameState.currentBird.userData ? 
-         gameState.currentBird.userData.id : 'None';
-      
-      ctx.fillText(`Current Bird uniqueId: ${birdUniqueId}`, 20, lineY);
-      lineY += lineHeight;
-      
-      // Add number of objects updated in last frame
-      ctx.fillStyle = '#AAFFAA';
-      ctx.fillText(`Objects updated: ${gameState.lastUpdateCount || 0}`, 20, lineY);
-      ctx.fillStyle = '#FFFFFF';
-      lineY += lineHeight;
-      
-      // Display if there's a debug flag
-      if (gameState.debugMode) {
-        ctx.fillStyle = '#AAFFAA';
-        ctx.fillText(`Debug Mode: ON`, 20, lineY);
-        ctx.fillStyle = '#FFFFFF';
-        lineY += lineHeight;
-      }
-      
-      // Box2D bodies in scene
-      ctx.fillText(`Box2D Bodies: ${gameState.bodyShapesCount || 0}`, 20, lineY);
-      lineY += lineHeight;
-      
-      // First few body IDs
-      if (gameState.bodyIds && gameState.bodyIds.length > 0) {
-        ctx.fillStyle = '#AAAAFF';
-        ctx.fillText(`Body IDs: ${gameState.bodyIds.slice(0, 3).join(', ')}${gameState.bodyIds.length > 3 ? '...' : ''}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillStyle = '#FFFFFF';
-      }
-      
-      // Game object counts
-      if (gameState.debugCounts) {
-        ctx.fillText(`Tracked Objects: ${gameState.debugCounts.trackedObjects}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillText(`Active Birds: ${gameState.debugCounts.birds}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillText(`Active Pigs: ${gameState.debugCounts.pigs}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillText(`Active Blocks: ${gameState.debugCounts.blocks}`, 20, lineY);
-        lineY += lineHeight;
-      } else {
-        ctx.fillText(`Tracked Objects: ${this.gameObjects.size}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillText(`Pigs Remaining: ${gameState.pigsRemaining}`, 20, lineY);
-        lineY += lineHeight;
-      }
-      
-      // Bird physics data
-      if (gameState.debugBirdData) {
-        ctx.fillStyle = '#FFFF00';
-        ctx.fillText(`Bird Physics:`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillStyle = '#FFFFFF';
-        
-        const bird = gameState.debugBirdData;
-        // Position
-        if (bird.position) {
-          ctx.fillText(`  Position: X:${bird.position.x.toFixed(2)}, Y:${bird.position.y.toFixed(2)}`, 20, lineY);
-          lineY += lineHeight;
-        }
-        
-        // Velocity
-        if (bird.velocity) {
-          ctx.fillText(`  Velocity: X:${bird.velocity.x.toFixed(2)}, Y:${bird.velocity.y.toFixed(2)}`, 20, lineY);
-          lineY += lineHeight;
-        }
-        
-        // Speed
-        if (bird.speed !== undefined) {
-          ctx.fillText(`  Speed: ${bird.speed.toFixed(2)}`, 20, lineY);
-          lineY += lineHeight;
-        }
-        
-        // UserData
-        if (bird.userData) {
-          ctx.fillText(`  UserData ID: ${bird.userData.id || 'None'}`, 20, lineY);
-          lineY += lineHeight;
-          ctx.fillText(`  UserData Type: ${bird.userData.type || 'None'}`, 20, lineY);
-        }
-        lineY += lineHeight;
-      } else {
-        // Position of current bird from game state
-        if (gameState.birdPosition) {
-          ctx.fillText(`Bird Position: X:${gameState.birdPosition.x.toFixed(2)}, Y:${gameState.birdPosition.y.toFixed(2)}`, 20, lineY);
-          lineY += lineHeight;
-        }
-      }
-      
-      // Aim power and direction
-      if (gameState.isAiming) {
-        ctx.fillStyle = '#FFFF00';
-        ctx.fillText(`Aiming Data:`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillStyle = '#FFFFFF';
-        
-        ctx.fillText(`  Power: ${gameState.aimPower.toFixed(2)}`, 20, lineY);
-        lineY += lineHeight;
-        ctx.fillText(`  Direction: X:${gameState.aimDirection.x.toFixed(2)}, Y:${gameState.aimDirection.y.toFixed(2)}`, 20, lineY);
-        lineY += lineHeight;
-      }
-      
-      // Debug flag indicator
-      ctx.font = 'bold 14px Arial';
-      ctx.fillStyle = '#FF00FF';
-      ctx.fillText('[DEBUG MODE - Press D to toggle]', 20, lineY);
-    }
     
     // If game is over, show message
     if (gameState.gameOver) {
