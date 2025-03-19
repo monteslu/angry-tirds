@@ -202,11 +202,12 @@ export class GameController {
         y: this.state.aimPosition.y + dirY * timeScaledSensitivity // Y should move in the same direction as input
       };
       
-      // Prevent pulling the bird below ground level
-      // Use bird radius (0.5 is default) to keep the entire bird above ground
+      // Allow bird to be pulled closer to ground level, but never below it
+      // Use a smaller buffer (0.05) instead of the full radius to allow more downward aiming
       const birdRadius = 0.5; // This is the standard bird radius used in createBird
-      if (this.state.aimPosition.y - birdRadius < this.state.worldDimensions.groundY) {
-        this.state.aimPosition.y = this.state.worldDimensions.groundY + birdRadius;
+      const groundBuffer = 0.05; // Minimal buffer to keep bird just above ground
+      if (this.state.aimPosition.y - groundBuffer < this.state.worldDimensions.groundY) {
+        this.state.aimPosition.y = this.state.worldDimensions.groundY + groundBuffer;
       }
       
       // Calculate the vector from slingshot to current position
@@ -217,8 +218,8 @@ export class GameController {
       // Calculate distance from slingshot
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      // Limit maximum stretch distance
-      const maxStretch = 5.0;
+      // Limit maximum stretch distance - increased for more powerful shots
+      const maxStretch = 5.5; // Increased from 5.0 to 5.5
       if (distance > maxStretch) {
         // Normalize the direction and scale to max stretch
         const norm = maxStretch / distance;
@@ -282,7 +283,7 @@ export class GameController {
       // Calculate horizontal component (always reverse of aim direction)
       const launchDirX = -this.state.aimDirection.x;
       
-      // IMPORTANT HELPER FUNCTION: Exactly matches the one in gameRenderer.js
+      // IMPORTANT HELPER FUNCTION: Enhances the one in gameRenderer.js with wider angle range
       const calculateTrajectoryDirection = (posY, forkY) => {
         // Calculate distance from the fork center point
         const distFromFork = posY - forkY; // Positive when below, negative when above
@@ -297,14 +298,19 @@ export class GameController {
           // If above fork (negative distance) → go DOWN (positive Y)
           const vertDirection = (distFromFork < 0) ? 1 : -1;
           
-          // Calculate magnitude based on distance (capped at a reasonable value)
-          const distFactor = Math.min(2.0, Math.abs(distFromFork)) / 2.0;
+          // Calculate magnitude based on distance with higher cap for more extreme angles
+          // Increased from 2.0 to 3.0 to allow for higher trajectory angles
+          const distFactor = Math.min(3.0, Math.abs(distFromFork)) / 2.0;
           
-          // Apply direction and magnitude
-          verticalComponent = vertDirection * distFactor;
+          // Apply direction and magnitude with additional scaling
+          // Use a steeper function that amplifies smaller distances
+          // This gives more control in the critical aiming range
+          const powerFactor = distFactor * (1.0 + 0.2 * (1.0 - Math.min(1.0, distFactor)));
+          verticalComponent = vertDirection * powerFactor;
           
           console.log('PHYSICS HELPER - Distance:', distFromFork, 
                      'Direction:', vertDirection, 
+                     'Power:', powerFactor,
                      'Result:', verticalComponent);
         }
         
@@ -444,26 +450,76 @@ export class GameController {
         const visibleBottom = -25;               // Very aggressive bottom detection
         const visibleTop = 25;                   // High enough to catch anything off top of screen
         
+        // Only check offscreen conditions now, speed is handled separately with cumulative damage
         const isOffscreen = (
           pos.y < visibleBottom ||          // Fell below visible area
           pos.y > visibleTop ||             // Went above visible area
           pos.x < visibleLeft ||            // Went off left edge of visible area
           pos.x > visibleRight ||           // Went off right edge of visible area
-          speed > 10.0 ||                   // Hit with moderate speed (lowered threshold)
           !this.isPositionOnScreen(pos.x, pos.y)  // Additional check based on screen coordinates
         );
         
+        // Process damage if the pig has been hit with sufficient speed
+        // Get the renderer object to update visual state
+        const pigObj = this.renderer.gameObjects.get(uniqueId);
+        const pigEntity = this.entityManager.getEntity(pigInfo.entityId);
+        
+        if (pigEntity && pigObj && pigInfo.active) {
+          // Current time for tracking impact cooldown
+          const currentTime = Date.now();
+          
+          // Damage thresholds - adjusted to make pigs 20% stronger (but still easier to kill than original)
+          const minDamageSpeed = 2.2;  // Increased from 2.0 to 2.2 (10% increase)
+          const maxDamageSpeed = 12.0; // Kept the same as before
+          
+          // Check if pig was hit with sufficient force and enough time has passed since last impact
+          // The 250ms cooldown stays the same
+          if (speed >= minDamageSpeed && (currentTime - pigEntity.properties.lastImpactTime > 250)) {
+            // Calculate damage amount based on speed (0-100%)
+            const speedFactor = Math.min((speed - minDamageSpeed) / (maxDamageSpeed - minDamageSpeed), 1.0);
+            const damageAmount = Math.ceil(speedFactor * 42); // Reduced from 50% to 42% max damage per hit (about 16% less damage)
+            
+            // Apply damage to health
+            pigEntity.properties.health = Math.max(0, pigEntity.properties.health - damageAmount);
+            
+            // Update damage level (percentage for visual feedback)
+            pigEntity.properties.damageLevel = 1 - (pigEntity.properties.health / pigEntity.properties.maxHealth);
+            
+            // Update last impact time and speed
+            pigEntity.properties.lastImpactTime = currentTime;
+            pigEntity.properties.lastImpactSpeed = speed;
+            
+            // Update renderer object with new damage level
+            pigObj.damageLevel = pigEntity.properties.damageLevel;
+            
+            // Log damage
+            console.log(`Pig ${uniqueId} hit with speed ${speed.toFixed(2)}, damage: ${damageAmount}, health: ${pigEntity.properties.health}/${pigEntity.properties.maxHealth}, damage level: ${(pigEntity.properties.damageLevel * 100).toFixed(0)}%`);
+            
+            // Kill pig if health reaches zero
+            if (pigEntity.properties.health <= 0) {
+              console.log(`Pig ${uniqueId} died from accumulated damage!`);
+              // Will be marked as inactive below
+            }
+          }
+        }
+        
+        // Check if pig should be killed - either from going offscreen or from accumulated damage
+        const shouldKill = isOffscreen || (pigEntity && pigEntity.properties.health <= 0);
+        
         // Using the isPositionOnScreen helper method defined in the class
         
-        // Always force kill if offscreen, regardless of previous state
-        if (isOffscreen) {
+        // Kill pig if it should be killed (offscreen or accumulated damage)
+        if (shouldKill) {
           // Force pig to be marked as inactive no matter what
           // This ensures we never get stuck with invisible pigs
           
-          // Output detailed log only if this is the first time detecting this pig as offscreen
+          // Output detailed log only if this is the first time detecting this pig as dead
           if (pigInfo.active) {
             // Log pig destruction with reason and detailed position
-            if (pos.y < visibleBottom) {
+            if (pigEntity && pigEntity.properties.health <= 0) {
+              // Killed from accumulated damage (already logged above)
+              // No additional log needed here
+            } else if (pos.y < visibleBottom) {
               console.log(`Pig ${uniqueId} killed: fell below screen (y: ${pos.y.toFixed(2)}, bottom: ${visibleBottom})`);
             } else if (pos.y > visibleTop) {
               console.log(`Pig ${uniqueId} killed: went above screen (y: ${pos.y.toFixed(2)}, top: ${visibleTop})`);
@@ -471,8 +527,6 @@ export class GameController {
               console.log(`Pig ${uniqueId} killed: went off left edge (x: ${pos.x.toFixed(2)}, left: ${visibleLeft})`);
             } else if (pos.x > visibleRight) {
               console.log(`Pig ${uniqueId} killed: went off right edge (x: ${pos.x.toFixed(2)}, right: ${visibleRight})`);
-            } else if (speed > 10.0) {
-              console.log(`Pig ${uniqueId} killed: hit with speed (${speed.toFixed(2)})`);
             } else if (!this.isPositionOnScreen(pos.x, pos.y)) {
               // Convert to screen coordinates for logging
               const pixelsPerMeter = this.renderer.finalScale;

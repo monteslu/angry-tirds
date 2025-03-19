@@ -305,16 +305,28 @@ export default class GameRenderer {
     
     // Check if this pig is marked as dead
     let isPigDead = false;
+    // Track damage level for visual feedback (0-1 scale)
+    let damageLevel = 0;
+    // Reference to the game object for later use
+    let currentPigObject = null;
     
-    // Direct dead status from the gameObject itself - simplest approach
+    // Direct dead status and damage level from the gameObject itself
     for (const [uniqueId, gameObject] of this.gameObjects.entries()) {
       if (gameObject.type === 'pig' && 
           Math.abs(gameObject.position.x - x) < 0.01 && 
           Math.abs(gameObject.position.y - y) < 0.01) {
         
+        // Store reference to the game object
+        currentPigObject = gameObject;
+        
         // Check for dead flag directly on the gameObject
         if (gameObject.dead === true) {
           isPigDead = true;
+        }
+        
+        // Check for damage level
+        if (gameObject.damageLevel !== undefined) {
+          damageLevel = gameObject.damageLevel;
         }
         
         // Also check activity status from trackedBodies as backup
@@ -375,74 +387,172 @@ export default class GameRenderer {
     this.ctx.lineWidth = pigRadius * 0.05;
     this.ctx.stroke();
     
-    // Eyes - make slightly larger
-    const eyeRadius = pigRadius * 0.18;
+    // Eyes - make whites SIGNIFICANTLY bigger to emphasize damage level
+    // The white part is the sclera and should be large and prominent
+    const eyeRadius = pigRadius * 0.28; // Made even bigger (previously 0.22)
     const eyeXOffset = pigRadius * 0.35;
     const eyeYOffset = -pigRadius * 0.2;
     
-    // Left eye with slight highlight
-    this.ctx.beginPath();
-    this.ctx.arc(-eyeXOffset, eyeYOffset, eyeRadius, 0, Math.PI * 2);
-    this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.fill();
-    
-    // Right eye with slight highlight
-    this.ctx.beginPath();
-    this.ctx.arc(eyeXOffset, eyeYOffset, eyeRadius, 0, Math.PI * 2);
-    this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.fill();
+    // Get pupil color from the game object if available
+    let pupilColor = '#000000'; // Default black
+    if (currentPigObject && currentPigObject.pupilColor) {
+      pupilColor = currentPigObject.pupilColor;
+    }
     
     if (!isPigDead) {
-      // Regular eyes for live pigs
+      // Calculate eye white color based on damage level
+      // Interpolate from white to red as damage increases
+      const red = 255;
+      const green = Math.max(0, Math.floor(255 * (1 - damageLevel)));
+      const blue = Math.max(0, Math.floor(255 * (1 - damageLevel)));
+      const eyeColor = `rgb(${red}, ${green}, ${blue})`;
       
-      // Eye highlights
+      // Left eye white (sclera) with color based on damage
       this.ctx.beginPath();
-      this.ctx.arc(-eyeXOffset - eyeRadius * 0.3, eyeYOffset - eyeRadius * 0.3, eyeRadius * 0.3, 0, Math.PI * 2);
+      this.ctx.arc(-eyeXOffset, eyeYOffset, eyeRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = eyeColor;
+      this.ctx.fill();
+      
+      // Right eye white (sclera) with color based on damage
+      this.ctx.beginPath();
+      this.ctx.arc(eyeXOffset, eyeYOffset, eyeRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = eyeColor;
+      this.ctx.fill();
+    }
+    
+    if (!isPigDead) {
+      // Live pigs - show pupils and highlights
+      
+      // Add eye highlights (specular reflection)
+      // Position changes based on damage level to show stress
+      const highlightOffsetX = eyeRadius * (0.3 - damageLevel * 0.1);
+      const highlightOffsetY = eyeRadius * (0.3 - damageLevel * 0.1);
+      const highlightRadius = eyeRadius * (0.3 - damageLevel * 0.1);
+      
+      // Left eye highlight
+      this.ctx.beginPath();
+      this.ctx.arc(-eyeXOffset - highlightOffsetX, eyeYOffset - highlightOffsetY, highlightRadius, 0, Math.PI * 2);
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       this.ctx.fill();
       
+      // Right eye highlight
       this.ctx.beginPath();
-      this.ctx.arc(eyeXOffset - eyeRadius * 0.3, eyeYOffset - eyeRadius * 0.3, eyeRadius * 0.3, 0, Math.PI * 2);
+      this.ctx.arc(eyeXOffset - highlightOffsetX, eyeYOffset - highlightOffsetY, highlightRadius, 0, Math.PI * 2);
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       this.ctx.fill();
       
-      // Regular pupils
-      const pupilRadius = eyeRadius * 0.6;
+      // Pupils - keep them smaller relative to the now larger eye whites
+      // Size still changes with damage to show dilation from stress
+      const pupilRadius = eyeRadius * (0.35 + damageLevel * 0.2); // Smaller relative to eye white
+      const pupilOffset = damageLevel * eyeRadius * 0.2; // Pupils move outward as damage increases
       
-      // Left pupil
+      // Left pupil - use the random pupil color from the entity
       this.ctx.beginPath();
-      this.ctx.arc(-eyeXOffset, eyeYOffset, pupilRadius, 0, Math.PI * 2);
-      this.ctx.fillStyle = '#000000';
+      this.ctx.arc(-eyeXOffset - pupilOffset, eyeYOffset, pupilRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = pupilColor; // Use the pig's unique eye color
       this.ctx.fill();
       
-      // Right pupil
+      // Right pupil - match the left pupil color
       this.ctx.beginPath();
-      this.ctx.arc(eyeXOffset, eyeYOffset, pupilRadius, 0, Math.PI * 2);
-      this.ctx.fillStyle = '#000000';
+      this.ctx.arc(eyeXOffset + pupilOffset, eyeYOffset, pupilRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = pupilColor; // Use the pig's unique eye color
       this.ctx.fill();
+      
+      // Add pupil highlight for more depth and realism
+      const pupilHighlightRadius = pupilRadius * 0.3;
+      const pupilHighlightOffset = pupilRadius * 0.2;
+      
+      // Left pupil highlight
+      this.ctx.beginPath();
+      this.ctx.arc(-eyeXOffset - pupilOffset - pupilHighlightOffset, 
+                   eyeYOffset - pupilHighlightOffset, 
+                   pupilHighlightRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.fill();
+      
+      // Right pupil highlight
+      this.ctx.beginPath();
+      this.ctx.arc(eyeXOffset + pupilOffset - pupilHighlightOffset, 
+                   eyeYOffset - pupilHighlightOffset, 
+                   pupilHighlightRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.fill();
+      
+      // Add eyebrows that become more angled as damage increases
+      const eyebrowLength = eyeRadius * (1.0 + damageLevel * 0.5);
+      const eyebrowThickness = pigRadius * (0.04 + damageLevel * 0.03);
+      const eyebrowAngle = 0.3 + damageLevel * 0.4; // Radians - becomes more angled
+      
+      // Calculate eyebrow points
+      const leftEyebrowX1 = -eyeXOffset - eyeRadius * 1.0;
+      const leftEyebrowY1 = eyeYOffset - eyeRadius * (0.8 + damageLevel * 0.3);
+      const leftEyebrowX2 = -eyeXOffset + eyeRadius * 0.4;
+      const leftEyebrowY2 = eyeYOffset - eyeRadius * 0.2;
+      
+      // Left eyebrow
+      this.ctx.beginPath();
+      this.ctx.moveTo(leftEyebrowX1, leftEyebrowY1);
+      this.ctx.lineTo(leftEyebrowX2, leftEyebrowY2);
+      this.ctx.lineWidth = eyebrowThickness;
+      this.ctx.strokeStyle = '#553311';
+      this.ctx.stroke();
+      
+      // Right eyebrow
+      this.ctx.beginPath();
+      this.ctx.moveTo(eyeXOffset + eyeRadius * 1.0, eyeYOffset - eyeRadius * (0.8 + damageLevel * 0.3));
+      this.ctx.lineTo(eyeXOffset - eyeRadius * 0.4, eyeYOffset - eyeRadius * 0.2);
+      this.ctx.lineWidth = eyebrowThickness;
+      this.ctx.strokeStyle = '#553311';
+      this.ctx.stroke();
+      
     } else {
-      // X eyes for dead pigs
-      const xSize = eyeRadius * 0.8;
+      // X eyes for dead pigs - with no white background
+      // Make X's smaller as requested
+      const xSize = eyeRadius * 0.8; // Reduced from 1.1 to 0.8
       
-      // Left X eye
+      // Left X eye - thicker and with white outline for contrast against green body
       this.ctx.beginPath();
       this.ctx.moveTo(-eyeXOffset - xSize, eyeYOffset - xSize);
       this.ctx.lineTo(-eyeXOffset + xSize, eyeYOffset + xSize);
       this.ctx.moveTo(-eyeXOffset + xSize, eyeYOffset - xSize);
       this.ctx.lineTo(-eyeXOffset - xSize, eyeYOffset + xSize);
-      this.ctx.lineWidth = pigRadius * 0.05;
+      this.ctx.lineWidth = pigRadius * 0.09; // Even thicker lines
       this.ctx.strokeStyle = '#000000';
       this.ctx.stroke();
       
-      // Right X eye
+      // Add white outline for better visibility (reduced to match smaller X size)
+      this.ctx.beginPath();
+      this.ctx.moveTo(-eyeXOffset - xSize - 1, eyeYOffset - xSize - 1);
+      this.ctx.lineTo(-eyeXOffset + xSize + 1, eyeYOffset + xSize + 1);
+      this.ctx.moveTo(-eyeXOffset + xSize + 1, eyeYOffset - xSize - 1);
+      this.ctx.lineTo(-eyeXOffset - xSize - 1, eyeYOffset + xSize + 1);
+      this.ctx.lineWidth = pigRadius * 0.12; // Thicker than the black line
+      this.ctx.strokeStyle = '#FFFFFF';
+      this.ctx.globalCompositeOperation = 'destination-over'; // Put white behind black
+      this.ctx.stroke();
+      this.ctx.globalCompositeOperation = 'source-over'; // Reset to default
+      
+      // Right X eye - with the same treatment
       this.ctx.beginPath();
       this.ctx.moveTo(eyeXOffset - xSize, eyeYOffset - xSize);
       this.ctx.lineTo(eyeXOffset + xSize, eyeYOffset + xSize);
       this.ctx.moveTo(eyeXOffset + xSize, eyeYOffset - xSize);
       this.ctx.lineTo(eyeXOffset - xSize, eyeYOffset + xSize);
-      this.ctx.lineWidth = pigRadius * 0.05;
+      this.ctx.lineWidth = pigRadius * 0.09; // Even thicker lines
       this.ctx.strokeStyle = '#000000';
       this.ctx.stroke();
+      
+      // Add white outline for better visibility (reduced to match smaller X size)
+      this.ctx.beginPath();
+      this.ctx.moveTo(eyeXOffset - xSize - 1, eyeYOffset - xSize - 1);
+      this.ctx.lineTo(eyeXOffset + xSize + 1, eyeYOffset + xSize + 1);
+      this.ctx.moveTo(eyeXOffset + xSize + 1, eyeYOffset - xSize - 1);
+      this.ctx.lineTo(eyeXOffset - xSize - 1, eyeYOffset + xSize + 1);
+      this.ctx.lineWidth = pigRadius * 0.12; // Thicker than the black line
+      this.ctx.strokeStyle = '#FFFFFF';
+      this.ctx.globalCompositeOperation = 'destination-over'; // Put white behind black
+      this.ctx.stroke();
+      this.ctx.globalCompositeOperation = 'source-over'; // Reset to default
     }
     
     // Snout - make it more prominent and pink
@@ -1102,7 +1212,7 @@ export default class GameRenderer {
   
   // IMPORTANT HELPER FUNCTION: Calculate trajectory direction
   // Used by both the trajectory guide and physics calculation to ensure consistency
-  // This can be copied to gameController.js to ensure calculations stay in sync
+  // Matches the enhanced version in gameController.js
   calculateTrajectoryDirection(posY, forkY) {
     // Calculate distance from the fork center point
     const distanceFromFork = posY - forkY; // Positive when below, negative when above
@@ -1117,15 +1227,15 @@ export default class GameRenderer {
       // If above fork (negative distance) → go DOWN (positive Y)
       const verticalDirection = (distanceFromFork < 0) ? 1 : -1;
       
-      // Calculate magnitude based on distance (capped at a reasonable value)
-      const distanceFactor = Math.min(2.0, Math.abs(distanceFromFork)) / 2.0;
+      // Calculate magnitude based on distance with higher cap for more extreme angles
+      // Increased from 2.0 to 3.0 to allow for higher trajectory angles
+      const distanceFactor = Math.min(3.0, Math.abs(distanceFromFork)) / 2.0;
       
-      // Apply direction and magnitude
-      verticalComponent = verticalDirection * distanceFactor;
-      
-      console.log('HELPER - Distance:', distanceFromFork, 
-                 'Direction:', verticalDirection, 
-                 'Result:', verticalComponent);
+      // Apply direction and magnitude with additional scaling
+      // Use a steeper function that amplifies smaller distances
+      // This gives more control in the critical aiming range
+      const powerFactor = distanceFactor * (1.0 + 0.2 * (1.0 - Math.min(1.0, distanceFactor)));
+      verticalComponent = verticalDirection * powerFactor;
     }
     
     return verticalComponent;
@@ -1158,12 +1268,6 @@ export default class GameRenderer {
     // Calculate vertical component using the shared helper function
     // This ensures the exact same calculation is used in physics and guide
     const launchDirY = this.calculateTrajectoryDirection(birdPos.y, slingForkY);
-    
-    console.log('GUIDE - Launch direction Y:', launchDirY);
-    
-    // Special log to help debugging
-    console.log(`GUIDE trajectory: ${launchDirX.toFixed(2)}, ${launchDirY.toFixed(2)}`);
-    console.log(`Aim from: (${startX.toFixed(2)}, ${startY.toFixed(2)}), Fork Y: ${slingForkY.toFixed(2)}`);
     
     // Create a local copy of these variables for normalization
     let normLaunchDirX = launchDirX;
