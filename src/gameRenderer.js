@@ -275,9 +275,9 @@ export default class GameRenderer {
     this.ctx.fillStyle = this.colors.wood;
     this.ctx.fillRect(-displayWidth/2, -displayHeight/2, displayWidth, displayHeight);
     
-    // Border
+    // Border with consistent thickness (not proportional to width)
     this.ctx.strokeStyle = '#5D4037';
-    this.ctx.lineWidth = displayWidth * 0.02; // Thinner border (changed from 0.05)
+    this.ctx.lineWidth = 0.05; // Fixed thickness for all boards
     this.ctx.strokeRect(-displayWidth/2, -displayHeight/2, displayWidth, displayHeight);
     
     // Wood grain (horizontal lines)
@@ -285,7 +285,7 @@ export default class GameRenderer {
     const grainSpacing = displayHeight / grainCount;
     
     this.ctx.strokeStyle = '#A1887F';
-    this.ctx.lineWidth = displayWidth * 0.02;
+    this.ctx.lineWidth = 0.03; // Fixed thickness for grain lines
     
     for (let i = 1; i < grainCount; i++) {
       const y = -displayHeight/2 + i * grainSpacing;

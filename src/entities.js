@@ -350,7 +350,10 @@ export class EntityManager {
       // Create a proper circle shape
       const circle = new b2Circle();
       circle.center.Set(0, 0); // Center relative to body position
-      circle.radius = radius;
+      
+      // Increase physics radius by 10% to better match visual size
+      // This helps prevent visual overlap with wooden blocks
+      circle.radius = radius * 1.1;
       
       // Create the circle shape
       b2CreateCircleShape(bodyId, shapeDef, circle);
@@ -360,15 +363,40 @@ export class EntityManager {
       console.error("Error creating pig with circle:", e);
     }
     
-    // Create an entity for this pig with the circle radius
-    // This way it's still drawn as a circle even though physics uses boxes
-    const properties = { radius, x, y, angle: 0 };
+    // Create an entity for this pig with the circle radius and damage tracking
+    // Add initial health and damage properties
+    // Randomly choose a pupil color for variety
+    const possiblePupilColors = [
+      '#000000', // Black
+      '#332211', // Dark Brown
+      '#225533', // Green
+      '#223355'  // Blue
+    ];
+    const randomPupilColor = possiblePupilColors[Math.floor(Math.random() * possiblePupilColors.length)];
+    
+    const properties = { 
+      radius, 
+      x, 
+      y, 
+      angle: 0,
+      // Add health and damage tracking for cumulative damage system
+      // Slightly increased health values (still easier to kill than original, but 20% stronger than last adjustment)
+      maxHealth: 60, // Increased from 50 to 60 (20% more health)
+      health: 60,
+      damageLevel: 0, // 0-1 value representing damage percentage
+      lastImpactTime: 0, // Track time of last impact
+      lastImpactSpeed: 0, // Track speed of last impact
+      // Assign a random pupil color for this pig
+      pupilColor: randomPupilColor
+    };
+    
     const entityId = this.createEntity('pig', bodyId, properties);
     
     // Get the entity to access the uniqueId
     const entity = this.getEntity(entityId);
     
     // Register with renderer using ONLY userData.id
+    // Also include health and damage properties for visual feedback
     this.renderer.registerGameObject(bodyId, 'pig', {
       ...properties,
       uniqueId: entity.uniqueId,

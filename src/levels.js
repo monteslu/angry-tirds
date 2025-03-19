@@ -52,7 +52,7 @@ export function createLevel(entityManager, worldDimensions, levelNumber = 1) {
   };
 }
 
-// LEVEL 4 - Inverted pyramid with narrow base
+// LEVEL 4 - Inverted pyramid with narrow base - FIXED STABILITY ISSUES
 function createLevel4(entityManager, worldDimensions) {
   // Get world dimensions
   const worldLeft = worldDimensions.left;
@@ -66,159 +66,193 @@ function createLevel4(entityManager, worldDimensions) {
   // Position for the inverted pyramid structure
   const pyramidX = slingshotX + 18;
   
-  // ======== BASE STRUCTURE ========
-  // Improve base stability while keeping it narrow
-  const baseWidth = 3.5; // Slightly wider but still narrow
-  
-  // Create a solid static base that's wider than the visible supports
-  entityManager.createStaticWoodBlock(pyramidX, worldBottom + 0.75, baseWidth, 1.5); // Static base platform
-  
-  // Create primary vertical supports - slightly spaced out
-  const supportSpacing = 0.8; // A bit wider spacing between supports
-  entityManager.createWoodBlock(pyramidX - supportSpacing, worldBottom + 3, 0.6, 4); // Left support - thicker
-  entityManager.createWoodBlock(pyramidX + supportSpacing, worldBottom + 3, 0.6, 4); // Right support - thicker
-  
-  // Add cross-bracing for the supports to prevent leaning
-  entityManager.createWoodBlock(pyramidX, worldBottom + 2, 2.2, 0.5); // Horizontal brace near bottom
-  entityManager.createWoodBlock(pyramidX, worldBottom + 4, 2.2, 0.5); // Horizontal brace higher up
-  
-  // ======== FIRST LEVEL ========
-  // First level platform - make it slightly wider with perfect placement
-  const level1Width = 7; // Wider platform for better weight distribution
-  const level1Y = worldBottom + 5.5;
-  entityManager.createWoodBlock(pyramidX, level1Y, level1Width, 1.2);
-  
-  // Add diagonal supports to transfer weight outward
-  const diagonalLength = 3;
-  // Left diagonal support - careful placement to not overlap or create physics anomalies 
-  entityManager.createWoodBlock(pyramidX - 2.5, level1Y - 1, 0.5, diagonalLength);
-  // Right diagonal support
-  entityManager.createWoodBlock(pyramidX + 2.5, level1Y - 1, 0.5, diagonalLength);
-  
-  // ======== SECOND LEVEL ========
-  // Second level - wider with better support structure
-  const level2Width = 10;
-  const level2Y = worldBottom + 8;
-  
-  // Add vertical supports for second level at precise positions
-  entityManager.createWoodBlock(pyramidX - 3, level1Y + 1.5, 0.6, 3); // Far left - thicker
-  entityManager.createWoodBlock(pyramidX, level1Y + 1.5, 0.6, 3); // Center - thicker
-  entityManager.createWoodBlock(pyramidX + 3, level1Y + 1.5, 0.6, 3); // Far right - thicker
-  
-  // Second level platform with better weight distribution
-  entityManager.createWoodBlock(pyramidX, level2Y, level2Width, 1.3); // Slightly thicker platform
-  
-  // Corner blocks to prevent the pig from rolling off
+  // Define standard sizes
   const cornerSize = 0.6; // Size of corner blocks
   const cornerHeight = 0.6; // Height of corner blocks
   
+  // ======== BASE STRUCTURE - WIDER AND MORE STABLE ========
+  // Make the base significantly wider for better initial stability
+  const baseWidth = 5.0; // Increased from 3.5 to 5.0
+  const baseHeight = 1.5;
+  const baseY = worldBottom + (baseHeight/2); // Ensure base is exactly on ground level
+  
+  // Create a wider static base that provides more stability
+  entityManager.createStaticWoodBlock(pyramidX, baseY, baseWidth, baseHeight); // Wider base
+  
+  // Create more spaced-out vertical supports
+  const supportSpacing = 1.2; // Increased from 0.8 to 1.2 for better stability
+  const supportHeight = 4;
+  const supportY = baseY + (baseHeight/2) + (supportHeight/2); // Ensure supports sit exactly on the base
+  
+  // Supports with exact positioning to prevent shifting
+  entityManager.createWoodBlock(pyramidX - supportSpacing, supportY, 0.7, supportHeight); // Left support - thicker
+  entityManager.createWoodBlock(pyramidX + supportSpacing, supportY, 0.7, supportHeight); // Right support - thicker
+  
+  // Stronger cross-bracing to prevent leaning
+  const bracingWidth = 3.0; // Increased from 2.2 to 3.0
+  entityManager.createWoodBlock(pyramidX, baseY + baseHeight + 1.0, bracingWidth, 0.6); // Lower brace - thicker
+  entityManager.createWoodBlock(pyramidX, baseY + baseHeight + 2.5, bracingWidth, 0.6); // Higher brace - thicker
+  
+  // ======== FIRST LEVEL ========
+  // First level platform - precise positioning and support
+  const level1Width = 7; // Good width for stability
+  const level1Height = 1.2;
+  const level1Y = supportY + (supportHeight/2) + (level1Height/2); // Exact positioning on supports
+  
+  // Create platform with exact positioning
+  entityManager.createWoodBlock(pyramidX, level1Y, level1Width, level1Height);
+  
+  // More stable diagonal supports with corrected angles and rotations
+  // Replace diagonal supports with vertical supports for better stability
+  const level1SupportSpacing = 2.5;
+  entityManager.createWoodBlock(pyramidX - level1SupportSpacing, level1Y - 1.5, 0.6, 1.5); // Left stabilizer
+  entityManager.createWoodBlock(pyramidX + level1SupportSpacing, level1Y - 1.5, 0.6, 1.5); // Right stabilizer
+  
+  // ======== SECOND LEVEL ========
+  // Second level - calculate height based on first level
+  const level2Height = 1.3;
+  const support2Height = 3;
+  const support2Y = level1Y + (level1Height/2) + (support2Height/2); // Exact positioning
+  
+  // More evenly spaced supports for second level
+  entityManager.createWoodBlock(pyramidX - 3, support2Y, 0.7, support2Height); // Far left - thicker
+  entityManager.createWoodBlock(pyramidX, support2Y, 0.7, support2Height); // Center - thicker
+  entityManager.createWoodBlock(pyramidX + 3, support2Y, 0.7, support2Height); // Far right - thicker
+  
+  // Second level platform with calculated position
+  const level2Width = 10;
+  const level2Y = support2Y + (support2Height/2) + (level2Height/2); // Exact positioning
+  entityManager.createWoodBlock(pyramidX, level2Y, level2Width, level2Height);
+  
+  // Add cross bracing for second level supports
+  entityManager.createWoodBlock(pyramidX - 1.5, support2Y, 2.5, 0.5); // Left brace
+  entityManager.createWoodBlock(pyramidX + 1.5, support2Y, 2.5, 0.5); // Right brace
+  
   // Position corner blocks to prevent pig from rolling
-  entityManager.createWoodBlock(pyramidX - 1.0, level2Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX - 1.0, level2Y + (level2Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left corner
-  entityManager.createWoodBlock(pyramidX + 1.0, level2Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX + 1.0, level2Y + (level2Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right corner
   
-  // Add a pig in the middle of second level - positioned directly on the platform
-  entityManager.createPig(pyramidX, level2Y + 1.0, 1.0);
+  // Add a pig in the middle of second level - positioned correctly
+  entityManager.createPig(pyramidX, level2Y + (level2Height/2) + 1.0, 1.0);
   
   // ======== THIRD LEVEL ========
-  // Third level - even wider with better structural integrity
-  const level3Width = 13;
-  const level3Y = worldBottom + 10.8;
+  // Third level - calculate position based on second level
+  const level3Height = 1.3;
+  const support3Height = 3;
+  const support3Y = level2Y + (level2Height/2) + (support3Height/2); // Exact positioning
   
-  // Add optimally placed vertical supports for third level
-  entityManager.createWoodBlock(pyramidX - 4, level2Y + 1.5, 0.6, 3); // Far left
-  entityManager.createWoodBlock(pyramidX - 1.3, level2Y + 1.5, 0.6, 3); // Middle left
-  entityManager.createWoodBlock(pyramidX + 1.3, level2Y + 1.5, 0.6, 3); // Middle right
-  entityManager.createWoodBlock(pyramidX + 4, level2Y + 1.5, 0.6, 3); // Far right
+  // More evenly placed vertical supports for third level
+  entityManager.createWoodBlock(pyramidX - 4, support3Y, 0.7, support3Height); // Far left
+  entityManager.createWoodBlock(pyramidX - 1.3, support3Y, 0.7, support3Height); // Middle left
+  entityManager.createWoodBlock(pyramidX + 1.3, support3Y, 0.7, support3Height); // Middle right
+  entityManager.createWoodBlock(pyramidX + 4, support3Y, 0.7, support3Height); // Far right
   
   // Add cross-bracing for better stability
-  entityManager.createWoodBlock(pyramidX - 2.5, level2Y + 1.5, 2.5, 0.5); // Left horizontal brace
-  entityManager.createWoodBlock(pyramidX + 2.5, level2Y + 1.5, 2.5, 0.5); // Right horizontal brace
+  entityManager.createWoodBlock(pyramidX - 2.65, support3Y, 2.5, 0.5); // Left horizontal brace
+  entityManager.createWoodBlock(pyramidX + 2.65, support3Y, 2.5, 0.5); // Right horizontal brace
   
-  // Third level platform
-  entityManager.createWoodBlock(pyramidX, level3Y, level3Width, 1.3); // Slightly thicker
+  // Third level platform with calculated position
+  const level3Width = 13;
+  const level3Y = support3Y + (support3Height/2) + (level3Height/2); // Exact positioning
+  entityManager.createWoodBlock(pyramidX, level3Y, level3Width, level3Height);
   
-  // Corner blocks for left pig
-  entityManager.createWoodBlock(pyramidX - 3.8, level3Y + (cornerHeight/2), 
+  // Corner blocks for left pig with correct positioning
+  entityManager.createWoodBlock(pyramidX - 3.8, level3Y + (level3Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left outer corner
-  entityManager.createWoodBlock(pyramidX - 2.2, level3Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX - 2.2, level3Y + (level3Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left inner corner
   
-  // Corner blocks for right pig
-  entityManager.createWoodBlock(pyramidX + 3.8, level3Y + (cornerHeight/2), 
+  // Corner blocks for right pig with correct positioning
+  entityManager.createWoodBlock(pyramidX + 3.8, level3Y + (level3Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right outer corner
-  entityManager.createWoodBlock(pyramidX + 2.2, level3Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX + 2.2, level3Y + (level3Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right inner corner
   
-  // Add pigs on third level - positioned directly on the platform
-  entityManager.createPig(pyramidX - 3, level3Y + 1.0, 1.0); // Left pig
-  entityManager.createPig(pyramidX + 3, level3Y + 1.0, 1.0); // Right pig
+  // Add pigs on third level - positioned correctly
+  entityManager.createPig(pyramidX - 3, level3Y + (level3Height/2) + 1.0, 1.0); // Left pig
+  entityManager.createPig(pyramidX + 3, level3Y + (level3Height/2) + 1.0, 1.0); // Right pig
   
   // ======== FOURTH LEVEL ========
-  // Fourth level - widest with carefully designed support structure
+  // Fourth level - calculate position based on third level
+  const level4Height = 1.5;
+  const support4Height = 3;
+  const support4Y = level3Y + (level3Height/2) + (support4Height/2); // Exact positioning
+  
+  // Add vertical supports for fourth level with optimal spacing and placement
+  entityManager.createWoodBlock(pyramidX - 6, support4Y, 0.8, support4Height); // Outer left - thicker
+  entityManager.createWoodBlock(pyramidX - 3, support4Y, 0.8, support4Height); // Inner left - thicker
+  entityManager.createWoodBlock(pyramidX, support4Y, 0.8, support4Height); // Center - thicker
+  entityManager.createWoodBlock(pyramidX + 3, support4Y, 0.8, support4Height); // Inner right - thicker
+  entityManager.createWoodBlock(pyramidX + 6, support4Y, 0.8, support4Height); // Outer right - thicker
+  
+  // Add cross-bracing for better support
+  entityManager.createWoodBlock(pyramidX - 4.5, support4Y, 3, 0.6); // Left horizontal brace - thicker
+  entityManager.createWoodBlock(pyramidX + 4.5, support4Y, 3, 0.6); // Right horizontal brace - thicker
+  
+  // Fourth level platform - calculated position
   const level4Width = 16;
-  const level4Y = worldBottom + 13.6;
+  const level4Y = support4Y + (support4Height/2) + (level4Height/2); // Exact positioning
+  entityManager.createWoodBlock(pyramidX, level4Y, level4Width, level4Height);
   
-  // Add vertical supports for fourth level with optimal spacing
-  entityManager.createWoodBlock(pyramidX - 6, level3Y + 1.5, 0.7, 3); // Outer left - thicker
-  entityManager.createWoodBlock(pyramidX - 3, level3Y + 1.5, 0.7, 3); // Inner left - thicker
-  entityManager.createWoodBlock(pyramidX, level3Y + 1.5, 0.7, 3); // Center - thicker
-  entityManager.createWoodBlock(pyramidX + 3, level3Y + 1.5, 0.7, 3); // Inner right - thicker
-  entityManager.createWoodBlock(pyramidX + 6, level3Y + 1.5, 0.7, 3); // Outer right - thicker
-  
-  // Add cross-bracing for better stability
-  entityManager.createWoodBlock(pyramidX - 4.5, level3Y + 1.5, 3, 0.5); // Left horizontal brace
-  entityManager.createWoodBlock(pyramidX + 4.5, level3Y + 1.5, 3, 0.5); // Right horizontal brace
-  
-  // Fourth level platform - hefty to support weight
-  entityManager.createWoodBlock(pyramidX, level4Y, level4Width, 1.5);
-  
-  // Corner blocks for left pig - only left and right
-  entityManager.createWoodBlock(pyramidX - 5.8, level4Y + (cornerHeight/2), 
+  // Corner blocks for left pig with correct positioning
+  entityManager.createWoodBlock(pyramidX - 5.8, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left outer corner
-  entityManager.createWoodBlock(pyramidX - 4.2, level4Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX - 4.2, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left inner corner
   
-  // Corner blocks for center pig - only left and right
-  entityManager.createWoodBlock(pyramidX - 0.8, level4Y + (cornerHeight/2), 
+  // Corner blocks for center pig with correct positioning
+  entityManager.createWoodBlock(pyramidX - 0.8, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Center left corner
-  entityManager.createWoodBlock(pyramidX + 0.8, level4Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX + 0.8, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Center right corner
   
-  // Corner blocks for right pig - only left and right
-  entityManager.createWoodBlock(pyramidX + 5.8, level4Y + (cornerHeight/2), 
+  // Corner blocks for right pig with correct positioning
+  entityManager.createWoodBlock(pyramidX + 5.8, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right outer corner
-  entityManager.createWoodBlock(pyramidX + 4.2, level4Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX + 4.2, level4Y + (level4Height/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right inner corner
   
-  // Add top block constructions with supporting structure underneath
-  entityManager.createWoodBlock(pyramidX - 5, level4Y + 2.7, 1.8, 2); // Left block
-  entityManager.createWoodBlock(pyramidX, level4Y + 2.7, 1.8, 2); // Center block
-  entityManager.createWoodBlock(pyramidX + 5, level4Y + 2.7, 1.8, 2); // Right block
+  // Add top blocks with better positioning and placement
+  const topBlockHeight = 2;
+  const topBlockY = level4Y + (level4Height/2) + (topBlockHeight/2);
+  entityManager.createWoodBlock(pyramidX - 5, topBlockY, 1.8, topBlockHeight); // Left block
+  entityManager.createWoodBlock(pyramidX, topBlockY, 1.8, topBlockHeight); // Center block
+  entityManager.createWoodBlock(pyramidX + 5, topBlockY, 1.8, topBlockHeight); // Right block
   
-  // Add pigs on top level - positioned directly on the platform near their corner blocks
-  entityManager.createPig(pyramidX - 5, level4Y + 1.0, 1.0); // Left pig
-  entityManager.createPig(pyramidX, level4Y + 1.0, 1.0); // Center pig
-  entityManager.createPig(pyramidX + 5, level4Y + 1.0, 1.0); // Right pig
+  // Add pigs on fourth level - positioned correctly
+  entityManager.createPig(pyramidX - 5, level4Y + (level4Height/2) + 1.0, 1.0); // Left pig
+  entityManager.createPig(pyramidX, level4Y + (level4Height/2) + 1.0, 1.0); // Center pig
+  entityManager.createPig(pyramidX + 5, level4Y + (level4Height/2) + 1.0, 1.0); // Right pig
   
   // ======== TOP CROWN ========
-  // Super top - narrower but more stable
-  const level5Y = level4Y + 6;
-  entityManager.createWoodBlock(pyramidX, level5Y, 6, 1.2); // Smaller top platform
+  // Define variables for top section
+  const topSupportHeight = 4;
+  const topSupportY = level4Y + (level4Height/2) + (topSupportHeight/2); // Exact position
+  const topWidth = 6;
+  const topHeight = 1.2;
   
-  // Strategic supports for the very top
-  entityManager.createWoodBlock(pyramidX - 2, level4Y + 4, 0.6, 4); // Left support for top
-  entityManager.createWoodBlock(pyramidX + 2, level4Y + 4, 0.6, 4); // Right support for top
+  // Strategic supports for the very top - thicker and properly positioned
+  entityManager.createWoodBlock(pyramidX - 2, topSupportY, 0.8, topSupportHeight); // Left support - thicker
+  entityManager.createWoodBlock(pyramidX + 2, topSupportY, 0.8, topSupportHeight); // Right support - thicker
   
-  // Corner blocks for the final pig at the very top - only left and right
-  entityManager.createWoodBlock(pyramidX - 0.8, level5Y + (cornerHeight/2), 
+  // Add cross-bracing between top supports for stability
+  entityManager.createWoodBlock(pyramidX, topSupportY - 1, 4.5, 0.6); // Lower brace
+  entityManager.createWoodBlock(pyramidX, topSupportY + 1, 4.5, 0.6); // Upper brace
+  
+  // Top platform with calculated position
+  const level5Y = topSupportY + (topSupportHeight/2) + (topHeight/2); // Exact positioning
+  entityManager.createWoodBlock(pyramidX, level5Y, topWidth, topHeight);
+  
+  // Corner blocks for the final pig with correct positioning
+  entityManager.createWoodBlock(pyramidX - 0.8, level5Y + (topHeight/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Left corner
-  entityManager.createWoodBlock(pyramidX + 0.8, level5Y + (cornerHeight/2), 
+  entityManager.createWoodBlock(pyramidX + 0.8, level5Y + (topHeight/2) + (cornerHeight/2), 
                               cornerSize, cornerHeight); // Right corner
   
-  // Final pig at the very top - positioned directly on the platform
-  entityManager.createPig(pyramidX, level5Y + 1.0, 1.0);
+  // Final pig at the very top - positioned correctly
+  entityManager.createPig(pyramidX, level5Y + (topHeight/2) + 1.0, 1.0);
 }
 
 // LEVEL 1 - Simple structure with fewer blocks and 2 pigs
