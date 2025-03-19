@@ -16,10 +16,8 @@
   - UPPER_SNAKE_CASE for constants
 - Use arrow functions for callbacks
 - Use async/await for asynchronous operations
-- Add JSDoc-style comments for utility functions
 - Error handling: Use try/catch blocks around async operations
-- Keep functions small and focused on a single responsibility
-- Implement proper cleanup/disconnection for resources (audio, etc.)
+- Document public functions with JSDoc-style comments
 
 ## Technology Stack
 - Vite for build tooling
@@ -27,11 +25,21 @@
 - Canvas API for rendering
 - Web Audio API for sound
 - Gamepad API for controller support
+- monteslu's jsgamelauncher integration
+
+## Important Restrictions
+- DO NOT modify input or sound handling as they are managed by jsgamelauncher
+- DO NOT modify index.html or use DOM manipulation
+- ONLY use the provided canvas element for rendering
+- DO NOT restart the server automatically
 
 ## Project Structure
 - `src/` - JavaScript source files
-  - `angryTirds.js` - Main game implementation
+  - `entities.js` - Entity definitions and management
+  - `gameController.js` - Game logic controller
   - `gameRenderer.js` - Canvas rendering
+  - `levels.js` - Level designs and configuration
+  - `physics.js` - Box2D physics integration
   - `utils.js` - Helper functions
 - `public/` - Static assets (images, sounds, Box2D WASM)
 
@@ -44,11 +52,9 @@
   2. Assign userData.id to body
   3. Register in tracking map using uniqueId as key
   4. Register with renderer using same uniqueId
-- Use a consistent approach for all entity types (bird, pig, wood)
 
 ## Physics Settings
 - World settings: 10 velocity iterations, 8 position iterations
 - Use 4 substeps per frame for more accurate collision
-- Physics objects use compound shapes for better collision
 - Enable bullet mode for fast-moving objects (birds)
-- Position tracking uses direct position/angle reads from Box2D
+- Properly destroy and clean up Box2D bodies when no longer needed

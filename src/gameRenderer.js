@@ -17,6 +17,11 @@ export default class GameRenderer {
     // Use the scale as provided - no DPI adjustment
     this.finalScale = this.baseScale;
     
+    // FPS counter
+    this.fps = 0;
+    this.frameCount = 0;
+    this.lastFpsUpdateTime = 0;
+    
     // Track world objects and their types - this is the primary entity storage
     // Maps uniqueId -> { type, properties, position, angle, etc. }
     this.gameObjects = new Map();
@@ -29,7 +34,11 @@ export default class GameRenderer {
       wood: '#DEB887',       // Burlywood
       pig: '#32CD32',        // Lime green  
       slingshot: '#8B4513',  // Brown
-      rubber: '#FFD700',     // Yellow/gold for slingshot straps
+      rubber: {
+        min: '#FFD700',      // Yellow/gold for minimum power
+        max: '#FF0000',      // Red for maximum power
+        highlight: '#FFEC8B' // Highlight color
+      },
       ui: {
         text: '#FFFFFF',     // White
         score: '#FFD700',    // Gold
@@ -146,12 +155,13 @@ export default class GameRenderer {
   
   // Draw a bird (circular physics object)
   drawBird(x, y, radius, angle, gameState) {
-    // Make display radius a bit smaller than physics radius (which was increased for collision)
-    const birdRadius = radius * 0.8; // Bird looks 80% of physics size
+    // Match display radius with physics radius
+    const birdRadius = radius; // Bird visual size matches physics size
     
     this.ctx.save();
     this.ctx.translate(x, y);
-    this.ctx.rotate(-angle);
+    // Use positive angle rotation with PI offset to match physics
+    this.ctx.rotate(angle + Math.PI);
     
     // Shadow for depth
     this.ctx.beginPath();
@@ -253,7 +263,7 @@ export default class GameRenderer {
   
   // Draw a wooden block (box physics object)
   drawWood(x, y, width, height, angle, gameState) {
-    // Match display size with physics size to fix floating appearance
+    // Match display size with physics size
     const displayWidth = width;  // 100% of physics width
     const displayHeight = height; // 100% of physics height
     
@@ -267,7 +277,7 @@ export default class GameRenderer {
     
     // Border
     this.ctx.strokeStyle = '#5D4037';
-    this.ctx.lineWidth = displayWidth * 0.05;
+    this.ctx.lineWidth = displayWidth * 0.02; // Thinner border (changed from 0.05)
     this.ctx.strokeRect(-displayWidth/2, -displayHeight/2, displayWidth, displayHeight);
     
     // Wood grain (horizontal lines)
@@ -290,8 +300,8 @@ export default class GameRenderer {
   
   // Draw a pig (enemy, circular physics object)
   drawPig(x, y, radius, angle, gameState) {
-    // Make visual radius close to physics radius
-    const pigRadius = radius * 0.9; // 90% of physics size for display
+    // Match visual radius with physics radius
+    const pigRadius = radius; // Visual size matches physics size
     
     // Check if this pig is marked as dead
     let isPigDead = false;
@@ -326,8 +336,8 @@ export default class GameRenderer {
     
     this.ctx.save();
     this.ctx.translate(x, y);
-    // Rotate 180 degrees (PI radians) more for proper pig orientation
-    this.ctx.rotate(-angle + Math.PI);
+    // Keep the 180-degree offset for proper orientation, but use positive angle
+    this.ctx.rotate(angle + Math.PI);
     
     // Shadow for depth
     this.ctx.beginPath();
@@ -838,8 +848,19 @@ export default class GameRenderer {
     // Switch to physics space for drawing straps
     this.prepareCanvas();
     
-    // Draw the straps
-    this.drawSlingshotRubber(strapEndPosition, gameState.slingPosition);
+    // Draw the straps, passing gameState for power-based coloring
+    this.drawSlingshotRubber(strapEndPosition, gameState.slingPosition, gameState);
+    
+    // Draw trajectory guide if aiming
+    if (gameState.isAiming && gameState.aimDirection && gameState.aimPower) {
+      this.drawTrajectoryGuide(
+        gameState.birdPosition,
+        gameState.slingPosition,
+        gameState.aimDirection,
+        gameState.aimPower,
+        gameState.isAiming
+      );
+    }
     
     // Restore to screen space
     this.restoreCanvas();
@@ -850,24 +871,76 @@ export default class GameRenderer {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     
-    // Draw score panel
+    // Draw score panel with larger background that includes the total score
     ctx.fillStyle = this.colors.ui.background;
-    ctx.fillRect(10, 10, 300, 40);
+    ctx.fillRect(10, 10, 300, gameState.totalScore > 0 ? 60 : 40);
     
-    // Draw score
-    ctx.font = '24px Arial';
+    // Draw level and score info
+    ctx.font = '20px Arial';
     ctx.fillStyle = this.colors.ui.score;
     ctx.textAlign = 'left';
-    ctx.fillText(`Score: ${gameState.score || 0}`, 20, 38);
+    ctx.fillText(`Level: ${gameState.currentLevel || 1}`, 20, 32);
+    ctx.fillText(`Score: ${gameState.score || 0}`, 140, 32);
+    
+    // Draw total score if greater than 0 - now inside the background panel
+    if (gameState.totalScore > 0) {
+      ctx.fillStyle = this.colors.ui.score; // Use same gold color as other scores
+      ctx.fillText(`Total: ${gameState.totalScore}`, 20, 60);
+    }
     
     // Draw birds remaining
     ctx.fillStyle = this.colors.ui.text;
     ctx.textAlign = 'right';
-    ctx.fillText(`Birds: ${gameState.birdsRemaining || 0}`, canvas.width - 20, 38);
+    ctx.fillText(`Birds: ${gameState.birdsRemaining || 0}`, canvas.width - 20, 32);
+    
+    // Draw FPS counter in top right corner, below birds count
+    ctx.fillStyle = this.colors.ui.background;
+    ctx.fillRect(canvas.width - 90, 45, 70, 30);
+    ctx.fillStyle = '#00FF00'; // Bright green for FPS
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`FPS: ${this.fps}`, canvas.width - 55, 65);
+    
+    // If level is complete but not game over, show level complete message
+    if (gameState.levelComplete && !gameState.gameOver) {
+      // Semi-transparent background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw level complete message
+      ctx.font = '42px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#4CAF50'; // Green
+      ctx.fillText('Level Complete!', canvas.width / 2, canvas.height / 2 - 30);
+      
+      // Show level completion bonus
+      ctx.font = '28px Arial';
+      ctx.fillStyle = '#FFD700'; // Gold
+      ctx.fillText('Level Bonus: 1000', canvas.width / 2, canvas.height / 2 + 10);
+      
+      // Show bird bonus if any birds remaining
+      if (gameState.birdsRemaining > 0) {
+        const birdBonus = gameState.birdsRemaining * 500;
+        ctx.fillText(`Bird Bonus: ${birdBonus} (${gameState.birdsRemaining} × 500)`, 
+                    canvas.width / 2, canvas.height / 2 + 50);
+      }
+      
+      // Show next level message
+      ctx.font = '24px Arial';
+      ctx.fillStyle = this.colors.ui.text;
+      ctx.fillText('Loading next level...', canvas.width / 2, canvas.height / 2 + 90);
+    }
     
     // If game is over, show message
-    if (gameState.gameOver) {
-      const message = gameState.victory ? 'VICTORY!' : 'GAME OVER';
+    else if (gameState.gameOver) {
+      let message;
+      if (gameState.victory && gameState.currentLevel >= gameState.maxLevel) {
+        message = 'GAME COMPLETE!';
+      } else if (gameState.victory) {
+        message = 'VICTORY!';
+      } else {
+        message = 'GAME OVER';
+      }
       
       // Semi-transparent background
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -877,12 +950,19 @@ export default class GameRenderer {
       ctx.font = '48px Arial';
       ctx.textAlign = 'center';
       ctx.fillStyle = gameState.victory ? '#4CAF50' : '#F44336';
-      ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+      ctx.fillText(message, canvas.width / 2, canvas.height / 2 - 20);
+      
+      // Draw score
+      if (gameState.victory) {
+        ctx.font = '30px Arial';
+        ctx.fillStyle = '#FFD700'; // Gold
+        ctx.fillText(`Total Score: ${gameState.totalScore}`, canvas.width / 2, canvas.height / 2 + 30);
+      }
       
       // Draw restart message
       ctx.font = '24px Arial';
       ctx.fillStyle = this.colors.ui.text;
-      ctx.fillText('Press ENTER to restart', canvas.width / 2, canvas.height / 2 + 60);
+      ctx.fillText('Press START to play again', canvas.width / 2, canvas.height / 2 + 80);
     }
     
     // No game instructions at bottom of screen
@@ -891,7 +971,7 @@ export default class GameRenderer {
   }
   
   // Draw slingshot rubber connecting to bird
-  drawSlingshotRubber(birdPos, slingPos) {
+  drawSlingshotRubber(birdPos, slingPos, gameState) {
     if (!birdPos || !slingPos) return;
     
     // Draw in physics space
@@ -904,21 +984,26 @@ export default class GameRenderer {
     const rightForkX = slingPos.x + width/2;
     const forkY = slingPos.y + height;
     
-    // Draw straps with slight curve for more realistic look
-    // Left strap - draw as shape with gradient
-    this.ctx.beginPath();
-    
-    // Calculate control point for curve based on distance
-    const dx = birdPos.x - leftForkX;
-    const dy = birdPos.y - forkY;
+    // Calculate the distance for curve adjustment
+    const dx = birdPos.x - slingPos.x;
+    const dy = birdPos.y - slingPos.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Always use yellow color for rubber bands
+    const strapColor = this.colors.rubber.min; // Yellow/gold color
+    const strapColorDarker = this.darkenColor(strapColor, 0.2); // 20% darker for gradient middle
     
     // Make curve more pronounced as the bird is pulled back
     const curveFactor = Math.min(0.25, distance * 0.05);
-    const controlX = (leftForkX + birdPos.x) / 2 - dy * curveFactor;
-    const controlY = (forkY + birdPos.y) / 2 + dx * curveFactor;
+    
+    // Calculate curve control points
+    const dxLeft = birdPos.x - leftForkX;
+    const dyLeft = birdPos.y - forkY;
+    const controlX = (leftForkX + birdPos.x) / 2 - dyLeft * curveFactor;
+    const controlY = (forkY + birdPos.y) / 2 + dxLeft * curveFactor;
     
     // Path for left strap
+    this.ctx.beginPath();
     this.ctx.moveTo(leftForkX, forkY);
     this.ctx.quadraticCurveTo(controlX, controlY, birdPos.x, birdPos.y);
     
@@ -927,55 +1012,227 @@ export default class GameRenderer {
     
     // Create gradient for the strap
     const leftGradient = this.ctx.createLinearGradient(leftForkX, forkY, birdPos.x, birdPos.y);
-    leftGradient.addColorStop(0, '#FFD700'); // Yellow/gold at the fork
-    leftGradient.addColorStop(0.5, '#FFC125'); // Darker in the middle for depth
-    leftGradient.addColorStop(1, '#FFD700'); // Yellow/gold at the bird
+    leftGradient.addColorStop(0, strapColor); // Yellow at the fork
+    leftGradient.addColorStop(0.5, strapColorDarker); // Darker in the middle for depth
+    leftGradient.addColorStop(1, strapColor); // Yellow at the bird
     
     this.ctx.strokeStyle = leftGradient;
     this.ctx.lineCap = 'round';
     this.ctx.stroke();
     
     // Right strap
-    this.ctx.beginPath();
-    
-    // Calculate control point for right side
-    const controlX2 = (rightForkX + birdPos.x) / 2 + dy * curveFactor;
-    const controlY2 = (forkY + birdPos.y) / 2 - dx * curveFactor;
+    const dxRight = birdPos.x - rightForkX;
+    const dyRight = birdPos.y - forkY;
+    const controlX2 = (rightForkX + birdPos.x) / 2 + dyRight * curveFactor;
+    const controlY2 = (forkY + birdPos.y) / 2 - dxRight * curveFactor;
     
     // Path for right strap
+    this.ctx.beginPath();
     this.ctx.moveTo(rightForkX, forkY);
     this.ctx.quadraticCurveTo(controlX2, controlY2, birdPos.x, birdPos.y);
     
     // Similar gradient for right strap
     const rightGradient = this.ctx.createLinearGradient(rightForkX, forkY, birdPos.x, birdPos.y);
-    rightGradient.addColorStop(0, '#FFD700'); // Yellow/gold
-    rightGradient.addColorStop(0.5, '#FFC125'); // Darker in the middle
-    rightGradient.addColorStop(1, '#FFD700'); // Yellow/gold
+    rightGradient.addColorStop(0, strapColor); // Yellow
+    rightGradient.addColorStop(0.5, strapColorDarker); // Darker in the middle
+    rightGradient.addColorStop(1, strapColor); // Yellow
     
     this.ctx.strokeStyle = rightGradient;
     this.ctx.stroke();
     
     // Add slight 3D effect with a thinner highlight
+    const highlightColor = this.lightenColor(strapColor, 0.3); // 30% lighter
+    
     this.ctx.beginPath();
     this.ctx.moveTo(leftForkX, forkY);
     this.ctx.quadraticCurveTo(controlX, controlY, birdPos.x, birdPos.y);
     this.ctx.lineWidth = 0.1;
-    this.ctx.strokeStyle = '#FFEC8B'; // Lighter yellow for highlight
+    this.ctx.strokeStyle = highlightColor;
     this.ctx.stroke();
     
     this.ctx.beginPath();
     this.ctx.moveTo(rightForkX, forkY);
     this.ctx.quadraticCurveTo(controlX2, controlY2, birdPos.x, birdPos.y);
-    this.ctx.strokeStyle = '#FFEC8B'; // Lighter yellow for highlight
+    this.ctx.strokeStyle = highlightColor;
     this.ctx.stroke();
     
     this.ctx.restore();
+  }
+  
+  // Helper function to convert hex color to RGB
+  hexToRgb(hex) {
+    // Remove # if present
+    hex = hex.replace(/^#/, '');
+    
+    // Parse hex values
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    
+    return { r, g, b };
+  }
+  
+  // Helper function to convert RGB to hex
+  rgbToHex(r, g, b) {
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+  
+  // Helper function to darken a color by percentage
+  darkenColor(color, percentage) {
+    const rgb = this.hexToRgb(color);
+    const darker = {
+      r: Math.max(0, Math.floor(rgb.r * (1 - percentage))),
+      g: Math.max(0, Math.floor(rgb.g * (1 - percentage))),
+      b: Math.max(0, Math.floor(rgb.b * (1 - percentage)))
+    };
+    return this.rgbToHex(darker.r, darker.g, darker.b);
+  }
+  
+  // Helper function to lighten a color by percentage
+  lightenColor(color, percentage) {
+    const rgb = this.hexToRgb(color);
+    const lighter = {
+      r: Math.min(255, Math.floor(rgb.r + (255 - rgb.r) * percentage)),
+      g: Math.min(255, Math.floor(rgb.g + (255 - rgb.g) * percentage)),
+      b: Math.min(255, Math.floor(rgb.b + (255 - rgb.b) * percentage))
+    };
+    return this.rgbToHex(lighter.r, lighter.g, lighter.b);
+  }
+  
+  // IMPORTANT HELPER FUNCTION: Calculate trajectory direction
+  // Used by both the trajectory guide and physics calculation to ensure consistency
+  // This can be copied to gameController.js to ensure calculations stay in sync
+  calculateTrajectoryDirection(posY, forkY) {
+    // Calculate distance from the fork center point
+    const distanceFromFork = posY - forkY; // Positive when below, negative when above
+    
+    // Initialize with zero vertical component
+    let verticalComponent = 0;
+    
+    // Only calculate non-zero vertical component if not at the fork level
+    if (Math.abs(distanceFromFork) >= 0.05) {
+      // Calculate vertical direction - critical for correct trajectory
+      // If below fork (positive distance) → go UP (negative Y)
+      // If above fork (negative distance) → go DOWN (positive Y)
+      const verticalDirection = (distanceFromFork < 0) ? 1 : -1;
+      
+      // Calculate magnitude based on distance (capped at a reasonable value)
+      const distanceFactor = Math.min(2.0, Math.abs(distanceFromFork)) / 2.0;
+      
+      // Apply direction and magnitude
+      verticalComponent = verticalDirection * distanceFactor;
+      
+      console.log('HELPER - Distance:', distanceFromFork, 
+                 'Direction:', verticalDirection, 
+                 'Result:', verticalComponent);
+    }
+    
+    return verticalComponent;
+  }
+  
+  // Draw trajectory guide for aiming
+  drawTrajectoryGuide(birdPos, slingPos, aimDirection, aimPower, isAiming) {
+    if (!isAiming || !birdPos || !slingPos || !aimDirection) return;
+    
+    const ctx = this.ctx;
+    ctx.save();
+    
+    // Only draw if we have a meaningful direction
+    if (Math.abs(aimDirection.x) < 0.001 && Math.abs(aimDirection.y) < 0.001) {
+      ctx.restore();
+      return;
+    }
+    
+    // Calculate trajectory start point (bird position)
+    const startX = birdPos.x;
+    const startY = birdPos.y;
+    
+    // Calculate the slingshot Y-branch point (fork)
+    const slingStemHeight = 3 * 0.6; // Height * 0.6 is the branch point
+    const slingForkY = slingPos.y + slingStemHeight;
+    
+    // Calculate horizontal component (always reverse of aim direction)
+    const launchDirX = -aimDirection.x;
+    
+    // Calculate vertical component using the shared helper function
+    // This ensures the exact same calculation is used in physics and guide
+    const launchDirY = this.calculateTrajectoryDirection(birdPos.y, slingForkY);
+    
+    console.log('GUIDE - Launch direction Y:', launchDirY);
+    
+    // Special log to help debugging
+    console.log(`GUIDE trajectory: ${launchDirX.toFixed(2)}, ${launchDirY.toFixed(2)}`);
+    console.log(`Aim from: (${startX.toFixed(2)}, ${startY.toFixed(2)}), Fork Y: ${slingForkY.toFixed(2)}`);
+    
+    // Create a local copy of these variables for normalization
+    let normLaunchDirX = launchDirX;
+    let normLaunchDirY = launchDirY;
+    
+    // Normalize the direction vector for consistent line length
+    const magnitude = Math.sqrt(normLaunchDirX * normLaunchDirX + normLaunchDirY * normLaunchDirY);
+    if (magnitude > 0) {
+      normLaunchDirX /= magnitude;
+      normLaunchDirY /= magnitude;
+    }
+    
+    // Trajectory length based on power
+    const lineLength = aimPower * 2;
+    
+    // Calculate end point using normalized direction
+    const endX = startX + normLaunchDirX * lineLength;
+    const endY = startY + normLaunchDirY * lineLength;
+    
+    // Calculate color based on power (white at minimum, red at maximum)
+    const normalizedPower = Math.min(1.0, aimPower / 5.0); // 5.0 is the max power
+    
+    // Generate a color between white (min) and red (max)
+    const r = 255; // Red always at max
+    const g = Math.floor(255 * (1 - normalizedPower)); // Green decreases with power
+    const b = Math.floor(255 * (1 - normalizedPower)); // Blue decreases with power
+    const alpha = 0.7 + (normalizedPower * 0.2); // Slightly more opaque at max power
+    
+    // Create the color string
+    const lineColor = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    
+    // Draw dotted line with power-based color
+    ctx.beginPath();
+    ctx.setLineDash([0.3, 0.3]); // Small dashes and gaps for dotted effect
+    ctx.lineWidth = 0.15;
+    ctx.strokeStyle = lineColor;
+    
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    
+    // Reset line dash
+    ctx.setLineDash([]);
+    
+    // Draw small circle at the end of trajectory guide with same color
+    ctx.beginPath();
+    ctx.arc(endX, endY, 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+    
+    ctx.restore();
   }
   
   // Main draw method called from game loop - does NOT use Box2D debug drawing
   Draw(worldId, gameState = {}) {
     try {
       const canvas = this.ctx.canvas;
+      
+      // Calculate and update FPS
+      this.frameCount++;
+      const now = performance.now();
+      const elapsed = now - this.lastFpsUpdateTime;
+      
+      // Update FPS every 500ms
+      if (elapsed >= 500) {
+        this.fps = Math.round((this.frameCount * 1000) / elapsed);
+        this.frameCount = 0;
+        this.lastFpsUpdateTime = now;
+      }
       
       // Clear the canvas completely
       this.ctx.clearRect(0, 0, canvas.width, canvas.height);

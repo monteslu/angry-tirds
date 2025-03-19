@@ -52,12 +52,13 @@ function start(Box2DFactory) {
     // Initialize game controller
     const gameController = new GameController(physics, entityManager, renderer, worldDimensions);
     
-    // Create level
-    const levelConfig = createLevel(entityManager, worldDimensions);
+    // Start with level 1
+    const levelConfig = createLevel(entityManager, worldDimensions, 1);
     
     // Update game state with level configuration
     gameController.state.slingPosition = levelConfig.slingshotPosition;
     gameController.state.birdPosition = levelConfig.initialBirdPosition;
+    gameController.state.currentLevel = 1; // Explicitly set to level 1
     
     // Prepare first bird
     gameController.prepareBird();
@@ -69,15 +70,19 @@ function start(Box2DFactory) {
       const deltaTime = lastTimestamp ? (timestamp - lastTimestamp) / 1000 : 0.016;
       lastTimestamp = timestamp;
       
-      // Handle input
-      gameController.handleInput();
+      // Pass deltaTime to handleInput for frame-rate independent movement
+      gameController.handleInput(deltaTime);
       
-      // Step physics
-      physics.stepWorld(worldId, deltaTime);
+      // Get current worldId (may change when levels change)
+      const currentWorldId = entityManager.worldId;
+      const currentTaskSystem = physics.taskSystem;
+      
+      // Step physics - use 4 substeps for smoother, faster animation
+      physics.stepWorld(currentWorldId, deltaTime, 4);
       
       // Clean up task system
-      if (taskSystem) {
-        taskSystem.ClearTasks();
+      if (currentTaskSystem) {
+        currentTaskSystem.ClearTasks();
       }
       
       // Update game objects
@@ -86,8 +91,8 @@ function start(Box2DFactory) {
       // Clean up physics objects
       gameController.cleanupBodies();
       
-      // Render
-      renderer.Draw(worldId, gameController.state);
+      // Render with current worldId
+      renderer.Draw(currentWorldId, gameController.state);
       
       // Loop
       requestAnimationFrame(gameLoop);

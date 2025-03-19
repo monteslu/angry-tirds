@@ -2,6 +2,7 @@
  * Game Controller - Manages game state and input handling
  */
 import { getInput, debugPhysicsBody, getIdFromBody, loadSound, playSound } from './utils.js';
+import { createLevel } from './levels.js';
 
 export class GameController {
   constructor(physics, entityManager, renderer, worldDimensions) {
@@ -24,6 +25,9 @@ export class GameController {
       birdsRemaining: 3,
       pigsRemaining: 0,
       score: 0,
+      totalScore: 0, // Track score across levels
+      currentLevel: 1, // Start at level 1
+      maxLevel: 4, // Maximum level available (now includes Level 4)
       worldDimensions: worldDimensions,
       slingPosition: { 
         x: worldDimensions.left + (worldDimensions.width * 0.15), 
@@ -50,15 +54,38 @@ export class GameController {
       aimPower: 0,
       gameOver: false,
       victory: false,
+      levelComplete: false, // Track if current level is completed
       isGameStarted: false, // Will be set to true when first bird is fired
       lastUpdateTime: 0,
       startButtonPressed: false, // Track if Start button was pressed
+      selectButtonPressed: false, // Track if Select button was pressed
       initTime: Date.now()
     };
   }
   
+  // Helper method to check if a position is visible on screen
+  isPositionOnScreen(x, y) {
+    // Convert Box2D coordinates to screen coordinates
+    const worldLeft = this.worldDimensions.left;
+    const worldBottom = this.worldDimensions.bottom;
+    const pixelsPerMeter = this.renderer.finalScale;
+    const canvasWidth = this.renderer.ctx.canvas.width;
+    const canvasHeight = this.renderer.ctx.canvas.height;
+    
+    // Apply the renderer's transformations
+    const screenX = (x - worldLeft) * pixelsPerMeter;
+    const screenY = canvasHeight - (y - worldBottom) * pixelsPerMeter;
+    
+    // Add a small margin (50 pixels) to ensure we catch slightly offscreen objects
+    const margin = 50;
+    return screenX > -margin && 
+           screenX < canvasWidth + margin && 
+           screenY > -margin && 
+           screenY < canvasHeight + margin;
+  }
+  
   // Process input and update game state
-  handleInput() {
+  handleInput(deltaTime) {
     const input = getInput();
     const player = input[0]; // Get first player (keyboard or gamepad)
     
@@ -76,7 +103,7 @@ export class GameController {
       this.state.aimPower = 0;
       this.state.aimPosition = { ...this.state.slingPosition }; // Track current position during aiming
     } else if (this.state.isAiming) {
-      this.handleAiming(player);
+      this.handleAiming(player, deltaTime);
     }
     
     // Check for restart game with Start button - use safer property checks
@@ -89,9 +116,20 @@ export class GameController {
       this.state.startButtonPressed = false;
     }
     
-    // Reset the select button pressed state if needed
+    // Check for SELECT button to move to next level (only in development mode)
     const isSelectPressed = player.SELECT && player.SELECT.pressed === true;
-    if (!isSelectPressed && this.state.selectButtonPressed) {
+    if (isSelectPressed && !this.state.selectButtonPressed) {
+      // Set the flag to prevent multiple actions on the same press
+      this.state.selectButtonPressed = true;
+      
+      // Move to next level or reset game if at max level
+      if (this.state.currentLevel < this.state.maxLevel) {
+        this.loadNextLevel();
+      } else {
+        this.resetGame();
+      }
+    } else if (!isSelectPressed && this.state.selectButtonPressed) {
+      // Reset the flag when button is released
       this.state.selectButtonPressed = false;
     }
   }
@@ -108,7 +146,10 @@ export class GameController {
   }
   
   // Handle the aiming process
-  handleAiming(player) {
+  handleAiming(player, deltaTime = 1/60) {
+    // Default to 60fps if no deltaTime is provided
+    // This ensures consistent speed even if frame rate varies
+    
     // Get directional input from left stick or d-pad
     const leftStickX = player.LEFT_STICK_X || 0;
     const leftStickY = player.LEFT_STICK_Y || 0;
@@ -131,8 +172,9 @@ export class GameController {
       const isLeftPressed = player.DPAD_LEFT && player.DPAD_LEFT.pressed === true;
       const isRightPressed = player.DPAD_RIGHT && player.DPAD_RIGHT.pressed === true;
       
-      if (isLeftPressed) dirX = -0.2;
-      else if (isRightPressed) dirX = 0.2;
+      // Fixed speed values for D-pad - increased for faster movement
+      if (isLeftPressed) dirX = -0.35; // Increased from -0.2 to -0.35
+      else if (isRightPressed) dirX = 0.35; // Increased from 0.2 to 0.35
     }
     
     if (Math.abs(dirY) < 0.05) {
@@ -140,18 +182,24 @@ export class GameController {
       const isDownPressed = player.DPAD_DOWN && player.DPAD_DOWN.pressed === true;
       const isUpPressed = player.DPAD_UP && player.DPAD_UP.pressed === true;
       
-      if (isDownPressed) dirY = -0.2;
-      else if (isUpPressed) dirY = 0.2;
+      // Fixed speed values for D-pad - increased for faster movement
+      if (isDownPressed) dirY = -0.35; // Increased from -0.2 to -0.35
+      else if (isUpPressed) dirY = 0.35; // Increased from 0.2 to 0.35
     }
     
     // Apply incremental position changes for smooth aiming
     if (Math.abs(dirX) > 0.05 || Math.abs(dirY) > 0.05) {
-      const sensitivity = 0.15; // Controls how quickly the bird moves when aiming
+      // Base sensitivity value - increased for faster movement
+      const baseSensitivity = 0.25; // Increased from 0.15 to 0.25 (about 67% faster)
       
-      // Update aim position incrementally for smooth movement
+      // Calculate time-based sensitivity
+      // Multiply by 60 to normalize to 60fps (our base time unit)
+      const timeScaledSensitivity = baseSensitivity * deltaTime * 60;
+      
+      // Update aim position incrementally for smooth movement with time scaling
       this.state.aimPosition = {
-        x: this.state.aimPosition.x + dirX * sensitivity,
-        y: this.state.aimPosition.y + dirY * sensitivity // Y should move in the same direction as input
+        x: this.state.aimPosition.x + dirX * timeScaledSensitivity,
+        y: this.state.aimPosition.y + dirY * timeScaledSensitivity // Y should move in the same direction as input
       };
       
       // Prevent pulling the bird below ground level
@@ -225,12 +273,58 @@ export class GameController {
     // Fire the bird if we have a valid aim
     if (this.state.currentBird && distance > 0.5) { // Require minimum stretch for launch
       // Calculate impulse based on aim and distance
-      const launchPower = this.state.aimPower * 50; // Reduced power for better control
+      const launchPower = this.state.aimPower * 50;
       
-      // Apply impulse in the opposite direction of aiming (slingshot effect)
-      // This directly uses the vector from bird to slingshot for most realistic behavior
-      const impulseX = (sling.x - this.state.aimPosition.x) * launchPower;
-      const impulseY = (sling.y - this.state.aimPosition.y) * launchPower;
+      // Calculate the Y-branch point of the slingshot (the center of the Y where it branches)
+      const slingStemHeight = 3 * 0.6; // Height of slingshot stem (height * 0.6)
+      const slingForkY = sling.y + slingStemHeight; // Y position of the fork
+      
+      // Calculate horizontal component (always reverse of aim direction)
+      const launchDirX = -this.state.aimDirection.x;
+      
+      // IMPORTANT HELPER FUNCTION: Exactly matches the one in gameRenderer.js
+      const calculateTrajectoryDirection = (posY, forkY) => {
+        // Calculate distance from the fork center point
+        const distFromFork = posY - forkY; // Positive when below, negative when above
+        
+        // Initialize with zero vertical component
+        let verticalComponent = 0;
+        
+        // Only calculate non-zero vertical component if not at the fork level
+        if (Math.abs(distFromFork) >= 0.05) {
+          // Calculate vertical direction - critical for correct trajectory
+          // If below fork (positive distance) → go UP (negative Y)
+          // If above fork (negative distance) → go DOWN (positive Y)
+          const vertDirection = (distFromFork < 0) ? 1 : -1;
+          
+          // Calculate magnitude based on distance (capped at a reasonable value)
+          const distFactor = Math.min(2.0, Math.abs(distFromFork)) / 2.0;
+          
+          // Apply direction and magnitude
+          verticalComponent = vertDirection * distFactor;
+          
+          console.log('PHYSICS HELPER - Distance:', distFromFork, 
+                     'Direction:', vertDirection, 
+                     'Result:', verticalComponent);
+        }
+        
+        return verticalComponent;
+      };
+      
+      // Calculate vertical component using the same helper function as the guide
+      const launchDirY = calculateTrajectoryDirection(this.state.aimPosition.y, slingForkY);
+      console.log('PHYSICS - Launch direction Y:', launchDirY);
+      
+      // Apply the direction components to the launch power
+      // IMPORTANT: We use exactly the same calculation for both horizontal and vertical
+      // components, and do NOT normalize or modify the direction vector in any way.
+      // This ensures the bird flies exactly along the guide line.
+      let impulseX = launchDirX * launchPower;
+      let impulseY = launchDirY * launchPower;
+      
+      // Log for debugging
+      console.log(`PHYSICS launch: ${impulseX.toFixed(2)}, ${impulseY.toFixed(2)}`);
+      console.log(`Bird pos: (${this.state.aimPosition.x.toFixed(2)}, ${this.state.aimPosition.y.toFixed(2)}), Fork Y: ${slingForkY.toFixed(2)}`);
       
       // Apply impulse to bird
       const { b2Vec2, b2Body_ApplyLinearImpulse } = this.physics;
@@ -281,7 +375,7 @@ export class GameController {
       // Reset bird position to slingshot
       if (this.state.currentBird) {
         const { b2Vec2, b2Rot, b2Body_SetTransform } = this.physics;
-        const resetPos = new b2Vec2(this.state.slingPosition.x, this.state.slingPosition.y);
+        const resetPos = new b2Vec2(this.state.slingPosition.x, this.state.slingPosition.y + 2.5);
         const rot = new b2Rot();
         rot.SetAngle(0);
         b2Body_SetTransform(
@@ -289,7 +383,10 @@ export class GameController {
           resetPos,
           rot
         );
-        this.state.birdPosition = { ...this.state.slingPosition };
+        this.state.birdPosition = { 
+          x: this.state.slingPosition.x,
+          y: this.state.slingPosition.y + 2.5
+        };
       }
     }
   }
@@ -336,20 +433,86 @@ export class GameController {
         const newPos = { x: pos.x, y: pos.y };
         this.renderer.updateGameObject(uniqueId, newPos, angle);
         
-        // Pig destruction conditions: fell off screen or hit with moderate force
-        // Only kill pig if it's still active
-        // Also mark pigs as dead if they go offscreen horizontally
-        if (pigInfo.active && (pos.y < -45 || pos.x < worldLeft - 10 || pos.x > worldRight + 10 || speed > 15.0)) {
-          // Add to score
-          this.state.score += 500;
+        // ALWAYS check if pig is offscreen, regardless of previous state
+        // Use EXTREMELY aggressive bounds checking to ensure pigs don't get stuck offscreen
+        // Note: Box2D coordinates are different from screen pixels
+        // In Box2D, the world is typically around 50-100 units wide, while the screen can be 800+ pixels
+        
+        // Calculate extreme bounds with tighter thresholds
+        const visibleLeft = worldLeft * 0.95;    // 5% buffer inside world left edge
+        const visibleRight = worldRight * 0.95;  // 5% buffer inside world right edge
+        const visibleBottom = -25;               // Very aggressive bottom detection
+        const visibleTop = 25;                   // High enough to catch anything off top of screen
+        
+        const isOffscreen = (
+          pos.y < visibleBottom ||          // Fell below visible area
+          pos.y > visibleTop ||             // Went above visible area
+          pos.x < visibleLeft ||            // Went off left edge of visible area
+          pos.x > visibleRight ||           // Went off right edge of visible area
+          speed > 10.0 ||                   // Hit with moderate speed (lowered threshold)
+          !this.isPositionOnScreen(pos.x, pos.y)  // Additional check based on screen coordinates
+        );
+        
+        // Using the isPositionOnScreen helper method defined in the class
+        
+        // Always force kill if offscreen, regardless of previous state
+        if (isOffscreen) {
+          // Force pig to be marked as inactive no matter what
+          // This ensures we never get stuck with invisible pigs
           
-          // Mark as inactive but NEVER destroy the body - keep for physics and positioning
+          // Output detailed log only if this is the first time detecting this pig as offscreen
+          if (pigInfo.active) {
+            // Log pig destruction with reason and detailed position
+            if (pos.y < visibleBottom) {
+              console.log(`Pig ${uniqueId} killed: fell below screen (y: ${pos.y.toFixed(2)}, bottom: ${visibleBottom})`);
+            } else if (pos.y > visibleTop) {
+              console.log(`Pig ${uniqueId} killed: went above screen (y: ${pos.y.toFixed(2)}, top: ${visibleTop})`);
+            } else if (pos.x < visibleLeft) {
+              console.log(`Pig ${uniqueId} killed: went off left edge (x: ${pos.x.toFixed(2)}, left: ${visibleLeft})`);
+            } else if (pos.x > visibleRight) {
+              console.log(`Pig ${uniqueId} killed: went off right edge (x: ${pos.x.toFixed(2)}, right: ${visibleRight})`);
+            } else if (speed > 10.0) {
+              console.log(`Pig ${uniqueId} killed: hit with speed (${speed.toFixed(2)})`);
+            } else if (!this.isPositionOnScreen(pos.x, pos.y)) {
+              // Convert to screen coordinates for logging
+              const pixelsPerMeter = this.renderer.finalScale;
+              const canvasWidth = this.renderer.ctx.canvas.width;
+              const canvasHeight = this.renderer.ctx.canvas.height;
+              const screenX = (pos.x - worldLeft) * pixelsPerMeter;
+              const screenY = canvasHeight - (pos.y - worldBottom) * pixelsPerMeter;
+              
+              console.log(`Pig ${uniqueId} killed: off screen in pixel space (physics: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}) (screen: ${screenX.toFixed(0)}, ${screenY.toFixed(0)})`);
+            } else {
+              console.log(`Pig ${uniqueId} killed: position (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})`);
+            }
+            
+            // Add to score only when newly killed
+            this.state.score += 500;
+          } else if (!pigInfo.loggedAsKilled) {
+            // Log even if already inactive (but not previously logged)
+            console.log(`Forcing inactive status for offscreen pig ${uniqueId} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})`);
+            // Mark that we've logged this pig as killed
+            pigInfo.loggedAsKilled = true;
+          }
+          
+          // ALWAYS mark as inactive - belt and suspenders approach
           pigInfo.active = false;
           
-          // Mark this pig as dead in the renderer
+          // ALWAYS mark this pig as dead in the renderer
           if (this.renderer.gameObjects.has(uniqueId)) {
             const pigObj = this.renderer.gameObjects.get(uniqueId);
             pigObj.dead = true;
+          }
+          
+          // Check if this was the last pig
+          const remainingPigs = Array.from(this.entityManager.trackedBodies.pigs.values())
+            .filter(info => info && info.active).length;
+          
+          console.log(`Pigs remaining: ${remainingPigs}`);
+          
+          // If no pigs left, level is complete
+          if (remainingPigs === 0) {
+            console.log("All pigs killed! Level complete!");
           }
         }
       } catch (e) {
@@ -431,10 +594,44 @@ export class GameController {
     const activePigs = Array.from(trackedBodies.pigs.values())
       .filter(info => info && info.active).length;
     
-    if (activePigs === 0 && !this.state.victory && this.state.isGameStarted) {
-      // Victory!
-      this.state.victory = true;
-      this.state.gameOver = true;
+    if (activePigs === 0 && this.state.isGameStarted) {
+      // Level complete!
+      if (!this.state.levelComplete) {
+        console.log(`Level ${this.state.currentLevel} COMPLETE! No more active pigs.`);
+        this.state.levelComplete = true;
+        
+        // Add level completion bonus
+        const levelCompletionBonus = 1000;
+        this.state.score += levelCompletionBonus;
+        
+        // Add bonus for birds remaining (500 points per bird)
+        const birdsRemainingCount = this.state.birdsRemaining;
+        if (birdsRemainingCount > 0) {
+          const birdBonus = birdsRemainingCount * 500;
+          this.state.score += birdBonus;
+          console.log(`Added bonus of ${birdBonus} for ${birdsRemainingCount} bird(s) remaining!`);
+        }
+        
+        this.state.totalScore += this.state.score;
+        console.log(`Level completion bonus: ${levelCompletionBonus}. Level score: ${this.state.score}, Total score: ${this.state.totalScore}`);
+        
+        // Check if there are more levels
+        if (this.state.currentLevel < this.state.maxLevel) {
+          // Set victory for this level but don't end the game
+          this.state.victory = true;
+          console.log(`Advancing to level ${this.state.currentLevel + 1} in 3 seconds...`);
+          
+          // Schedule next level after a delay
+          setTimeout(() => {
+            this.loadNextLevel();
+          }, 3000);
+        } else {
+          // Final victory - game complete!
+          console.log("GAME COMPLETE! All levels finished!");
+          this.state.victory = true;
+          this.state.gameOver = true;
+        }
+      }
     } else if (this.state.birdsRemaining <= 0 && !this.state.currentBird && !this.state.isFiring && !this.state.gameOver) {
       // Game over - no birds left and pigs remain
       this.state.gameOver = true;
@@ -442,9 +639,77 @@ export class GameController {
     
     // Store number of active pigs
     this.state.pigsRemaining = activePigs;
+    
+    // Periodically do a global check for offscreen pigs that weren't caught
+    // Do this check every 3 seconds
+    const currentTime = Date.now();
+    if (!this.lastPigScanTime || currentTime - this.lastPigScanTime > 3000) {
+      this.lastPigScanTime = currentTime;
+      this.performGlobalPigCheck();
+    }
   }
   
-  // Prepare a new bird on the slingshot
+  // Global check for any pigs that might be offscreen
+  performGlobalPigCheck() {
+    const trackedBodies = this.entityManager.trackedBodies;
+    const { b2Body_GetPosition } = this.physics;
+    const worldLeft = this.worldDimensions.left;
+    const worldRight = this.worldDimensions.right;
+    
+    // Extra-wide boundaries for this check
+    const extremeLeft = worldLeft * 1.5;
+    const extremeRight = worldRight * 1.5;
+    const extremeBottom = -50;
+    const extremeTop = 50;
+    
+    let pigsKilled = 0;
+    
+    // Go through all pigs and check if any are way offscreen
+    for (const [uniqueId, pigInfo] of trackedBodies.pigs.entries()) {
+      // Only check active pigs
+      if (pigInfo && pigInfo.active && pigInfo.entityId) {
+        try {
+          const entity = this.entityManager.entities[pigInfo.entityId];
+          if (!entity || !entity.bodyId) continue;
+          
+          const bodyId = entity.bodyId;
+          const pos = b2Body_GetPosition(bodyId);
+          
+          // Check if WAY offscreen
+          if (pos.y < extremeBottom || pos.y > extremeTop || 
+              pos.x < extremeLeft || pos.x > extremeRight ||
+              !this.isPositionOnScreen(pos.x, pos.y)) {
+              
+            // Kill the pig
+            pigInfo.active = false;
+            pigsKilled++;
+            console.log(`GLOBAL CHECK: Forced kill of pig ${uniqueId} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})`);
+            
+            // Mark in renderer
+            if (this.renderer.gameObjects.has(uniqueId)) {
+              const pigObj = this.renderer.gameObjects.get(uniqueId);
+              pigObj.dead = true;
+            }
+          }
+        } catch (e) {
+          console.error("Error in global pig check:", e);
+        }
+      }
+    }
+    
+    if (pigsKilled > 0) {
+      console.log(`GLOBAL CHECK: Killed ${pigsKilled} straggling pigs!`);
+      
+      // Check if this killed the last pigs
+      const remainingPigs = Array.from(trackedBodies.pigs.values())
+        .filter(info => info && info.active).length;
+      
+      if (remainingPigs === 0) {
+        console.log("GLOBAL CHECK: All pigs killed! Level complete!");
+      }
+    }
+  }
+  
   prepareBird() {
     if (this.state.birdsRemaining <= 0) return;
     
@@ -463,76 +728,242 @@ export class GameController {
     this.state.birdPosition = { ...birdPosition };
   }
   
-  // Reset the game
-  resetGame() {
-    console.log("Resetting game - destroying all physics objects");
-    const { b2DestroyBody } = this.physics;
-    const trackedBodies = this.entityManager.trackedBodies;
+  // Load a specific level
+  loadLevel(levelNumber) {
+    console.log(`Loading level ${levelNumber}`);
     
-    // First, save any existing bodies to destroy
-    const bodiesToDestroy = [];
+    // First clear the existing level, which attempts to destroy all physics bodies
+    this.clearLevel();
     
-    // Get all existing body IDs from trackedBodies
-    for (const [uniqueId, info] of trackedBodies.birds.entries()) {
-      if (info && info.active && info.entityId) {
-        const entity = this.entityManager.entities[info.entityId];
-        if (entity && entity.bodyId) {
-          bodiesToDestroy.push(entity.bodyId);
+    // IMPORTANT: Recreate physics world for a completely fresh state
+    // Save old values before recreating
+    const oldWorldId = this.entityManager.worldId;
+    const oldTaskSystem = this.physics.taskSystem;
+    
+    // After clearing the level, ensure entity manager ground references are also cleared
+    // This is critical to prevent trying to destroy the same ground body twice
+    for (const entityId in this.entityManager.entities) {
+      const entity = this.entityManager.entities[entityId];
+      if (entity && entity.type === 'ground') {
+        console.log(`Clearing ground entity reference: ${entityId}`);
+        delete this.entityManager.entities[entityId];
+        
+        // Also cleanup from bodyToEntity mapping
+        if (entity.uniqueId) {
+          this.entityManager.bodyToEntity.delete(entity.uniqueId);
         }
       }
     }
     
-    for (const [uniqueId, info] of trackedBodies.pigs.entries()) {
-      if (info && info.active && info.entityId) {
-        const entity = this.entityManager.entities[info.entityId];
-        if (entity && entity.bodyId) {
-          bodiesToDestroy.push(entity.bodyId);
+    // Also cleanup any marked ground bodies from previous error handling
+    if (this.groundBodiesForCleanup && this.groundBodiesForCleanup.length > 0) {
+      console.log(`Cleaning up ${this.groundBodiesForCleanup.length} previously marked ground bodies`);
+      for (const uniqueId of this.groundBodiesForCleanup) {
+        // Remove from renderer if it exists there
+        if (this.renderer.gameObjects.has(uniqueId)) {
+          console.log(`Removing ground object from renderer: ${uniqueId}`);
+          this.renderer.gameObjects.delete(uniqueId);
         }
+        
+        // Remove from entityManager's bodyToEntity map
+        this.entityManager.bodyToEntity.delete(uniqueId);
       }
+      
+      // Clear the cleanup list
+      this.groundBodiesForCleanup = [];
     }
     
-    for (const [uniqueId, info] of trackedBodies.blocks.entries()) {
-      if (info && info.active && info.entityId) {
-        const entity = this.entityManager.entities[info.entityId];
-        if (entity && entity.bodyId) {
-          bodiesToDestroy.push(entity.bodyId);
-        }
-      }
-    }
+    // Recreate the physics world - this ensures we get a completely fresh world
+    console.log("Calling physics.recreateWorld to create a fresh physics world");
+    const { worldId, taskSystem } = this.physics.recreateWorld(oldWorldId, oldTaskSystem);
     
-    // Destroy all bodies we gathered
-    for (const bodyId of bodiesToDestroy) {
-      try {
-        b2DestroyBody(bodyId);
-      } catch (e) {
-        console.error("Error destroying body during reset:", e);
-      }
-    }
+    // Update entity manager with new world ID
+    this.entityManager.worldId = worldId;
+    // Store task system reference
+    this.physics.taskSystem = taskSystem;
     
-    // Reset tracked bodies objects
-    trackedBodies.birds.clear();
-    trackedBodies.pigs.clear();
-    trackedBodies.blocks.clear();
+    console.log(`Physics world recreated. New world ID: ${worldId}`);
     
-    // Reset game state
+    // Set the current level
+    this.state.currentLevel = levelNumber;
+    
+    // Reset level-specific state
     this.state.isAiming = false;
     this.state.isFiring = false;
     this.state.score = 0;
     this.state.gameOver = false;
     this.state.victory = false;
+    this.state.levelComplete = false;
     this.state.isGameStarted = false;
     this.state.currentBird = null;
-    this.state.startButtonPressed = false;
-    this.state.birdPosition = { ...this.state.slingPosition };
     
-    // Reset entity system
+    // Make sure bird count is reset to 3 for each level
+    // This is set in multiple places to ensure it always happens
+    this.state.birdsRemaining = 3;
+    
+    // Reinitialize entity manager's tracking state
     this.entityManager.entities = {};
-    this.entityManager.bodyToEntity.clear();
+    this.entityManager.bodyToEntity = new Map();
     this.entityManager.nextEntityId = 1;
+    this.entityManager.trackedBodies.birds.clear();
+    this.entityManager.trackedBodies.pigs.clear();
+    this.entityManager.trackedBodies.blocks.clear();
     
-    // Clear renderer object registry
+    // Clear renderer object registry to ensure no ghost objects remain
     this.renderer.gameObjects.clear();
     
-    console.log("Game reset complete - all physics objects destroyed");
+    // Create the new level with new worldId - this recreates the ground and all entities
+    const levelConfig = createLevel(this.entityManager, this.worldDimensions, levelNumber);
+    
+    // Update game state with level configuration
+    this.state.slingPosition = levelConfig.slingshotPosition;
+    this.state.birdPosition = levelConfig.initialBirdPosition;
+    
+    // Explicitly reset bird count to 3 for the new level
+    this.state.birdsRemaining = 3;
+    console.log(`Reset birds remaining to ${this.state.birdsRemaining} for level ${levelNumber}`);
+    
+    // Prepare first bird
+    this.prepareBird();
+    
+    console.log(`Level ${levelNumber} loaded successfully with new physics world (ID: ${worldId})`);
+  }
+  
+  // Load the next level
+  loadNextLevel() {
+    const nextLevel = this.state.currentLevel + 1;
+    console.log(`Loading next level: ${nextLevel}`);
+    
+    // Check if next level exists
+    if (nextLevel <= this.state.maxLevel) {
+      console.log(`Valid level: ${nextLevel}. Loading level...`);
+      this.loadLevel(nextLevel);
+    } else {
+      // No more levels, complete the game
+      console.log(`Level ${nextLevel} does not exist. Game complete!`);
+      this.state.victory = true;
+      this.state.gameOver = true;
+    }
+  }
+  
+  // Clear the current level without resetting the entire game
+  clearLevel() {
+    console.log("Clearing current level");
+    const { b2DestroyBody } = this.physics;
+    const trackedBodies = this.entityManager.trackedBodies;
+    
+    // First, save any existing bodies to destroy
+    const bodiesToDestroy = [];
+    const uniqueIdsProcessed = new Set(); // Track uniqueIds we've processed to avoid duplicates
+    
+    // Get all existing body IDs from trackedBodies
+    for (const collection of [trackedBodies.birds, trackedBodies.pigs, trackedBodies.blocks]) {
+      for (const [uniqueId, info] of collection.entries()) {
+        // Skip if already processed this uniqueId
+        if (uniqueIdsProcessed.has(uniqueId)) continue;
+        uniqueIdsProcessed.add(uniqueId);
+        
+        if (info && info.entityId) {
+          const entity = this.entityManager.entities[info.entityId];
+          if (entity && entity.bodyId) {
+            bodiesToDestroy.push({
+              bodyId: entity.bodyId,
+              type: entity.type,
+              uniqueId: uniqueId
+            });
+          }
+        }
+      }
+    }
+    
+    // Also search for any ground entities that might exist
+    for (const entityId in this.entityManager.entities) {
+      const entity = this.entityManager.entities[entityId];
+      if (entity && entity.type === 'ground' && entity.bodyId) {
+        const uniqueId = entity.uniqueId;
+        if (!uniqueIdsProcessed.has(uniqueId)) {
+          // Verify the ground body is valid before adding to destruction list
+          try {
+            // Use getIdFromBody to verify the body exists and has valid userData
+            const isValid = getIdFromBody(entity.bodyId) !== null;
+            
+            if (isValid) {
+              console.log(`Found valid ground body (uniqueId: ${uniqueId}) to destroy`);
+              uniqueIdsProcessed.add(uniqueId);
+              bodiesToDestroy.push({
+                bodyId: entity.bodyId,
+                type: 'ground',
+                uniqueId: uniqueId
+              });
+            } else {
+              console.log(`Skipping invalid ground body (uniqueId: ${uniqueId})`);
+            }
+          } catch (e) {
+            console.warn(`Error verifying ground body (uniqueId: ${uniqueId}):`, e);
+          }
+        }
+      }
+    }
+    
+    // Log what we're about to destroy
+    console.log(`Found ${bodiesToDestroy.length} bodies to destroy:`);
+    const typeCount = { bird: 0, pig: 0, wood: 0, ground: 0, other: 0 };
+    bodiesToDestroy.forEach(item => {
+      typeCount[item.type] = (typeCount[item.type] || 0) + 1;
+    });
+    console.log(`Types: ${JSON.stringify(typeCount)}`);
+    
+    // Destroy all bodies we gathered
+    for (const item of bodiesToDestroy) {
+      try {
+        // Check if body is valid before destroying it
+        if (item.bodyId) {
+          // Add safety check using getIdFromBody to verify the body exists and has valid userData
+          const bodyId = getIdFromBody(item.bodyId) ? item.bodyId : null;
+          if (bodyId) {
+            b2DestroyBody(item.bodyId);
+            console.log(`Successfully destroyed ${item.type} body with uniqueId: ${item.uniqueId}`);
+          } else {
+            console.log(`Skipping destroy for ${item.type} body - body appears invalid`);
+          }
+        }
+      } catch (e) {
+        // Special handling for memory access error, which indicates the body is already destroyed
+        if (e.message && e.message.includes('memory access out of bounds')) {
+          console.warn(`Skipping already destroyed ${item.type} body with uniqueId: ${item.uniqueId}`);
+          
+          // If this is a ground entity, mark it for cleanup in our entity registry
+          if (item.type === 'ground') {
+            console.log(`Marking ground body for cleanup - it's already been destroyed by Box2D`);
+            // Track for cleanup so we don't try to use this reference again
+            this.groundBodiesForCleanup = this.groundBodiesForCleanup || [];
+            this.groundBodiesForCleanup.push(item.uniqueId);
+          }
+        } else {
+          console.error(`Error destroying ${item.type} body:`, e);
+        }
+      }
+    }
+    
+    console.log(`Cleared ${bodiesToDestroy.length} physics bodies`);
+    console.log("Level cleared successfully");
+  }
+  
+  // Reset the entire game (back to level 1)
+  resetGame() {
+    console.log("Resetting game - back to level 1");
+    
+    // Clear current level
+    this.clearLevel();
+    
+    // Reset game-wide state
+    this.state.totalScore = 0;
+    this.state.currentLevel = 1;
+    this.state.startButtonPressed = false;
+    
+    // Load level 1
+    this.loadLevel(1);
+    
+    console.log("Game reset complete - back to level 1");
   }
 }

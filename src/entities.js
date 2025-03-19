@@ -174,6 +174,8 @@ export class EntityManager {
   
   // Create ground
   createGround() {
+    console.log("Creating new ground for physics world");
+    
     const { 
       b2DefaultBodyDef, b2BodyType, b2CreateBody, 
       b2DefaultShapeDef, b2Segment, b2Vec2, b2CreateSegmentShape 
@@ -187,14 +189,16 @@ export class EntityManager {
     // Static bodies for ground
     bd_ground.type = b2BodyType.b2_staticBody;
     
+    // Create ground body in the current physics world
     const groundId = b2CreateBody(this.worldId, bd_ground);
     
     const shapeDefSegment = new b2DefaultShapeDef();
     shapeDefSegment.density = 0.0; // Static
     shapeDefSegment.friction = 0.6;
-    shapeDefSegment.restitution = 0.1;
+    shapeDefSegment.restitution = 0.0; // No bounce for ground
     
     // Ground segments - positioned based on calculated ground level (bottom of canvas)
+    // Create a wide ground that extends well beyond visible area
     {
       const segment = new b2Segment();
       segment.point1 = new b2Vec2(worldLeft * 2, worldBottom); // Extend past visible area
@@ -230,7 +234,49 @@ export class EntityManager {
       y: groundY
     });
     
+    console.log("Ground created successfully with ID:", groundId);
     return groundId;
+  }
+  
+  // Create a static wood block (for bases that shouldn't move)
+  createStaticWoodBlock(x, y, width, height, angle = 0) {
+    const { 
+      b2DefaultBodyDef, b2BodyType, b2Vec2, b2CreateBody, 
+      b2DefaultShapeDef, b2MakeBox, b2CreatePolygonShape 
+    } = this.physics;
+    
+    const bd = new b2DefaultBodyDef();
+    bd.type = b2BodyType.b2_staticBody; // Static body type
+    bd.position = new b2Vec2(x, y);
+    bd.angle = angle;
+    
+    const bodyId = b2CreateBody(this.worldId, bd);
+    
+    const shapeDef = new b2DefaultShapeDef();
+    shapeDef.density = 0.0;      // Static density
+    shapeDef.friction = 0.8;     // High friction
+    shapeDef.restitution = 0.0;  // No bounce
+    
+    const box = b2MakeBox(width/2, height/2);
+    b2CreatePolygonShape(bodyId, shapeDef, box);
+    
+    // Create an entity for this block
+    const properties = { width, height, x, y, angle, isStatic: true };
+    const entityId = this.createEntity('wood', bodyId, properties);
+    
+    // Get the entity to access the uniqueId
+    const entity = this.getEntity(entityId);
+    
+    // Register with renderer using ONLY userData.id and including position
+    this.renderer.registerGameObject(bodyId, 'wood', {
+      ...properties,
+      uniqueId: entity.uniqueId,
+      x, y, angle
+    });
+    
+    this.trackBody(bodyId, 'wood', entityId);
+    
+    return bodyId;
   }
   
   // Create a wood block
@@ -244,17 +290,18 @@ export class EntityManager {
     bd.type = b2BodyType.b2_dynamicBody;
     bd.position = new b2Vec2(x, y);
     bd.angle = angle;
+    bd.linearDamping = 0.2;   // Add damping to reduce jittering
+    bd.angularDamping = 0.4;  // Add angular damping to prevent rotation
     
     const bodyId = b2CreateBody(this.worldId, bd);
     
     const shapeDef = new b2DefaultShapeDef();
-    shapeDef.density = 1.0;      // Reduced density to allow movement
-    shapeDef.friction = 0.5;     // Moderate friction
-    shapeDef.restitution = 0.1;  // Small bounce for better interaction
+    shapeDef.density = 1.0;      // Moderate density
+    shapeDef.friction = 0.6;     // Slightly higher friction for better stability
+    shapeDef.restitution = 0.0;  // No bounce to prevent initial jittering
     
-    // Make the blocks slightly larger to ensure collisions
-    width = width * 1.2;  // Make blocks 20% wider
-    height = height * 1.2; // Make blocks 20% taller
+    // Use exact dimensions for physics to match rendering
+    // No size adjustment needed
     
     const box = b2MakeBox(width/2, height/2);
     b2CreatePolygonShape(bodyId, shapeDef, box);
@@ -282,42 +329,39 @@ export class EntityManager {
   createPig(x, y, radius = 1.0) {
     const { 
       b2DefaultBodyDef, b2BodyType, b2Vec2, b2CreateBody, 
-      b2DefaultShapeDef, b2MakeCircle, b2CreateCircleShape,
-      b2MakeBox, b2CreatePolygonShape
+      b2DefaultShapeDef, b2Circle, b2CreateCircleShape
     } = this.physics;
     
     const bd = new b2DefaultBodyDef();
     bd.type = b2BodyType.b2_dynamicBody;
     bd.position = new b2Vec2(x, y);
+    bd.fixedRotation = false; // Ensure rotation is enabled for rolling
+    bd.linearDamping = 0.5;   // Higher linear damping to significantly reduce movement
+    bd.angularDamping = 0.7;  // Higher angular damping to greatly slow down rotation
     
     const bodyId = b2CreateBody(this.worldId, bd);
     
     const shapeDef = new b2DefaultShapeDef();
-    shapeDef.density = 0.6;      // Lighter for better movement
-    shapeDef.friction = 0.3;
-    shapeDef.restitution = 0.3;  // Good bounce for pigs
+    shapeDef.density = 1.0;      // Heavier to resist movement more
+    shapeDef.friction = 0.8;     // Much higher friction to greatly reduce rolling
+    shapeDef.restitution = 0.2;  // Even less bounce for pigs
     
-    // Create a circle shape for better collisions if available
     try {
-      if (typeof b2CreateCircleShape === 'function' && typeof b2MakeCircle === 'function') {
-        const circle = b2MakeCircle(radius);
-        b2CreateCircleShape(bodyId, shapeDef, circle);
-      } else {
-        // Fallback to box shape if circle is not available
-        const shape = b2MakeBox(radius, radius);
-        b2CreatePolygonShape(bodyId, shapeDef, shape);
-      }
+      // Create a proper circle shape
+      const circle = new b2Circle();
+      circle.center.Set(0, 0); // Center relative to body position
+      circle.radius = radius;
       
-      // Add another shape to increase collision area for better physics
-      const extraBox = b2MakeBox(radius * 0.7, radius * 0.7);
-      b2CreatePolygonShape(bodyId, shapeDef, extraBox);
+      // Create the circle shape
+      b2CreateCircleShape(bodyId, shapeDef, circle);
+      
+      console.log("Created pig using circle shape");
     } catch (e) {
-      console.log("Error creating circle shape for pig, using box", e);
-      const shape = b2MakeBox(radius, radius);
-      b2CreatePolygonShape(bodyId, shapeDef, shape);
+      console.error("Error creating pig with circle:", e);
     }
     
-    // Create an entity for this pig
+    // Create an entity for this pig with the circle radius
+    // This way it's still drawn as a circle even though physics uses boxes
     const properties = { radius, x, y, angle: 0 };
     const entityId = this.createEntity('pig', bodyId, properties);
     
@@ -340,8 +384,8 @@ export class EntityManager {
   createBird(x, y, radius = 0.5) {
     const { 
       b2DefaultBodyDef, b2BodyType, b2Vec2, b2CreateBody, 
-      b2Body_SetBullet, b2DefaultShapeDef, b2MakeCircle, 
-      b2CreateCircleShape, b2MakeBox, b2CreatePolygonShape
+      b2Body_SetBullet, b2DefaultShapeDef, b2Circle,
+      b2CreateCircleShape
     } = this.physics;
     
     const bd = new b2DefaultBodyDef();
@@ -349,6 +393,8 @@ export class EntityManager {
     bd.position = new b2Vec2(x, y);
     bd.bullet = true; // Enable continuous collision detection for fast-moving objects
     bd.fixedRotation = false; // Allow rotation for more realistic physics
+    bd.linearDamping = 0.3;   // Add moderate linear damping to reduce excessive movement
+    bd.angularDamping = 0.5;  // Add angular damping to limit excessive rotation
     
     // Create the Box2D body
     const bodyId = b2CreateBody(this.worldId, bd);
@@ -365,32 +411,25 @@ export class EntityManager {
     // Create the shape
     const shapeDef = new b2DefaultShapeDef();
     shapeDef.density = 5.0;      // Heavy enough for impact but not too much
-    shapeDef.friction = 0.5;     // Moderate friction
+    shapeDef.friction = 0.6;     // Increased friction to reduce rolling
     shapeDef.restitution = 0.2;  // Small amount of bounce for better physics response
     
-    // Create a circle shape for better collisions if available
     try {
-      if (typeof b2CreateCircleShape === 'function' && typeof b2MakeCircle === 'function') {
-        const circle = b2MakeCircle(radius);
-        b2CreateCircleShape(bodyId, shapeDef, circle);
-      } else {
-        // Fallback to box shape if circle is not available
-        const shape = b2MakeBox(radius, radius);
-        b2CreatePolygonShape(bodyId, shapeDef, shape);
-      }
+      // Create a proper circle shape
+      const circle = new b2Circle();
+      circle.center.Set(0, 0); // Center relative to body position
+      circle.radius = radius;
       
-      // Add a box shape as well for better collision
-      const boxSize = radius * 0.7;  // Slightly smaller than the radius
-      const box = b2MakeBox(boxSize, boxSize);
-      b2CreatePolygonShape(bodyId, shapeDef, box);
+      // Create the circle shape
+      b2CreateCircleShape(bodyId, shapeDef, circle);
+      
+      console.log("Created bird using circle shape");
     } catch (e) {
-      console.error("Error creating shapes for bird:", e);
-      // Fallback to a simple box
-      const shape = b2MakeBox(radius, radius);
-      b2CreatePolygonShape(bodyId, shapeDef, shape);
+      console.error("Error creating bird with circle:", e);
     }
     
-    // Create an entity for this bird
+    // Create an entity for this bird with the circle radius
+    // This way it's still drawn as a circle even though physics uses boxes
     const properties = { radius, x, y, angle: 0 };
     const entityId = this.createEntity('bird', bodyId, properties);
     
