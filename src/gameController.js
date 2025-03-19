@@ -210,8 +210,14 @@ export class GameController {
         this.state.aimPosition.y = this.state.worldDimensions.groundY + groundBuffer;
       }
       
-      // Calculate the vector from slingshot to current position
+      // Prevent bird from being pulled more than one bird width to the right of slingshot
+      // This restricts forward pulling and ensures reasonable launch angles
       const sling = this.state.slingPosition;
+      if (this.state.aimPosition.x > sling.x + birdRadius) {
+        this.state.aimPosition.x = sling.x + birdRadius;
+      }
+      
+      // Calculate the vector from slingshot to current position
       const dx = this.state.aimPosition.x - sling.x;
       const dy = this.state.aimPosition.y - sling.y;
       
